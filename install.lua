@@ -51,6 +51,7 @@ local json = dofile(join(ROOT, "vendor/json.lua"))
 local array_mt = toml.array_mt
 local date_mt = { __toml_date = true }
 local SOURCE_LINE = '[[ -f "${CODEX_HOME:-$HOME/.codex}/scripts/codex-shell.bash" ]] && source "${CODEX_HOME:-$HOME/.codex}/scripts/codex-shell.bash"'
+local OPTIONAL_SOURCE_LINE = '[[ -f "${CODEX_HOME:-$HOME/.codex}/scripts/codex-openrouter-shell.bash" ]] && source "${CODEX_HOME:-$HOME/.codex}/scripts/codex-openrouter-shell.bash"'
 local STATE_NAME = ".dotfiles-managed-config.json"
 
 local function exists(path) return succeeds("test -e " .. quote(path)) end
@@ -225,12 +226,28 @@ local function leaf_paths(data, prefix, result)
 end
 
 local function remove_leaf(data, path)
-  local node = data
-  for i = 1, #path - 1 do
+  local function remove(node, index)
     if not is_dictionary(node) then return end
-    node = node[path[i]]
+    local key = path[index]
+    if index == #path then
+      node[key] = nil
+    else
+      local child = node[key]
+      remove(child, index + 1)
+      if is_dictionary(child) and next(child) == nil then node[key] = nil end
+    end
   end
-  if is_dictionary(node) then node[path[#path]] = nil end
+  remove(data, 1)
+end
+
+-- Fail closed if unmanaged legacy settings still mention the forbidden provider.
+local function references_openrouter(value)
+  if type(value) == "string" then return value:lower():find("open[_-]?router") ~= nil end
+  if type(value) ~= "table" then return false end
+  for key, child in pairs(value) do
+    if references_openrouter(key) or references_openrouter(child) then return true end
+  end
+  return false
 end
 
 local function merge(target, shared, path)
@@ -256,16 +273,23 @@ local function valid_array(value)
   return true
 end
 
-local function prepare_configs(codex_home)
+local function prepare_configs(codex_home, include_openrouter)
   local state_file = join(codex_home, STATE_NAME)
   local state = exists(state_file) and json.decode(read_file(state_file)) or setmetatable({}, json.object_mt)
   if type(state) ~= "table" or getmetatable(state) ~= json.object_mt then error("invalid managed-config state: " .. state_file, 0) end
   local prepared, new_state = {}, {}
   for _, name in ipairs({ "config.toml", "granular.config.toml" }) do
-    local shared = read_toml(join(ROOT, "codex/" .. name))
-    if name == "config.toml" then
-      shared.model_catalog_json = join(codex_home, "models.json")
-    else
+    local shared_path = join(ROOT, "codex/" .. name)
+    if not is_file(shared_path) then error("missing repository file: " .. shared_path, 0) end
+    local shared = read_toml(shared_path)
+    if include_openrouter then
+      local optional_name = name == "config.toml" and "openrouter.config.toml" or "openrouter-granular.config.toml"
+      local optional_path = join(ROOT, "codex/" .. optional_name)
+      if not is_file(optional_path) then error("missing repository file: " .. optional_path, 0) end
+      merge(shared, read_toml(optional_path), "")
+      if name == "config.toml" then shared.model_catalog_json = join(codex_home, "models.json") end
+    end
+    if name == "granular.config.toml" then
       shared.permissions = shared.permissions or {}
       shared.permissions.granular = shared.permissions.granular or {}
       shared.permissions.granular.workspace_roots = shared.permissions.granular.workspace_roots or {}
@@ -289,6 +313,9 @@ local function prepare_configs(codex_home)
       if not lookup[json.encode(path)] then remove_leaf(merged, path) end
     end
     merge(merged, shared, "")
+    if not include_openrouter and references_openrouter(merged) then
+      error("OpenRouter references remain in " .. target .. "; review and remove them or use --include-openrouter on an approved machine (existing configuration has not been changed)", 0)
+    end
     local text = dump_toml(merged)
     prepared[#prepared + 1] = { target = target, changed = not same_value(existing, merged) or not exists(target), text = text }
     new_state[name] = paths
@@ -312,8 +339,35 @@ local function install_link(source, target)
   print("Linked " .. target .. " -> " .. source)
 end
 
+local function remove_source_line(text, source_line)
+  local from = 1
+  while true do
+    local first, last = text:find(source_line, from, true)
+    if not first then return text end
+    local before = first == 1 or text:sub(first - 1, first - 1) == "\n"
+    local after = last == #text or text:sub(last + 1, last + 1) == "\n"
+    if before and after then
+      if last < #text then last = last + 1 end
+      text = text:sub(1, first - 1) .. text:sub(last + 1)
+      from = first
+    else
+      from = last + 1
+    end
+  end
+end
+
+local function append_source_line(text, source_line)
+  if #text > 0 and text:sub(-1) ~= "\n" then text = text .. "\n" end
+  return text .. source_line .. "\n"
+end
+
 local function main()
-  if #arg ~= 0 then error("Usage: lua install.lua", 0) end
+  local include_openrouter = #arg == 1 and arg[1] == "--include-openrouter"
+  if #arg == 1 and (arg[1] == "--help" or arg[1] == "-h") then
+    print("Usage: lua install.lua [--include-openrouter]")
+    return
+  end
+  if #arg ~= 0 and not include_openrouter then error("Usage: lua install.lua [--include-openrouter]", 0) end
   local home = os.getenv("HOME")
   if not home or home == "" then error("HOME must be set", 0) end
   home = absolute(home)
@@ -326,29 +380,47 @@ local function main()
     { join(ROOT, "codex/AGENTS.md"), join(codex_home, "AGENTS.md") },
     { join(ROOT, "bash/codex.bash"), join(codex_home, "scripts/codex-shell.bash") },
   }
+  local optional_links = {
+    { join(ROOT, "bash/codex-openrouter.bash"), join(codex_home, "scripts/codex-openrouter-shell.bash") },
+  }
   for _, name in ipairs({ "openrouter-model-families.txt", "openrouter-model-exceptions.json" }) do
-    links[#links + 1] = { join(ROOT, "codex/" .. name), join(codex_home, name) }
+    optional_links[#optional_links + 1] = { join(ROOT, "codex/" .. name), join(codex_home, name) }
   end
   for _, name in ipairs({ "pick-codex-model.sh", "refresh-openrouter-model-catalog.sh", "strip-model-system-prompts.sh" }) do
-    links[#links + 1] = { join(ROOT, "codex/scripts/" .. name), join(codex_home, "scripts/" .. name) }
+    optional_links[#optional_links + 1] = { join(ROOT, "codex/scripts/" .. name), join(codex_home, "scripts/" .. name) }
+  end
+  if include_openrouter then
+    for _, link in ipairs(optional_links) do links[#links + 1] = link end
   end
   for _, link in ipairs(links) do
     if not is_file(link[1]) then error("missing repository file: " .. link[1], 0) end
     if exists(link[2]) and is_dir(link[2]) and not is_link(link[2]) then error("refusing to replace directory: " .. link[2], 0) end
   end
-  local configs, state_file, state_text = prepare_configs(codex_home)
+  local configs, state_file, state_text = prepare_configs(codex_home, include_openrouter)
   local bashrc = join(home, ".bashrc_local")
-  local shell_text = exists(bashrc) and read_file(bashrc) or ""
-  local shell_change = true
+  local original_shell_text = exists(bashrc) and read_file(bashrc) or ""
+  local shell_text = remove_source_line(original_shell_text, OPTIONAL_SOURCE_LINE)
+  local has_common = false
   for line in (shell_text .. "\n"):gmatch("(.-)\n") do
-    if line == SOURCE_LINE then shell_change = false; break end
+    if line == SOURCE_LINE then has_common = true; break end
   end
-  if shell_change then
-    if #shell_text > 0 and shell_text:sub(-1) ~= "\n" then shell_text = shell_text .. "\n" end
-    shell_text = shell_text .. SOURCE_LINE .. "\n"
-  end
+  if not has_common then shell_text = append_source_line(shell_text, SOURCE_LINE) end
+  if include_openrouter then shell_text = append_source_line(shell_text, OPTIONAL_SOURCE_LINE) end
+  local shell_change = shell_text ~= original_shell_text
   command("mkdir -p " .. quote(codex_home))
   for _, link in ipairs(links) do install_link(link[1], link[2]) end
+  if not include_openrouter then
+    for _, link in ipairs(optional_links) do
+      local source, target = link[1], link[2]
+      if is_link(target) and capture("readlink " .. quote(target)) == source then
+        local ok, err = os.remove(target)
+        if not ok then error(err, 0) end
+        print("Removed previously managed optional link " .. target)
+      elseif exists(target) or is_link(target) then
+        io.stderr:write("install: leaving unmanaged optional file " .. target .. "; review it separately\n")
+      end
+    end
+  end
   for _, config in ipairs(configs) do
     if config.changed then
       if exists(config.target) or is_link(config.target) then backup(config.target) end
@@ -362,7 +434,11 @@ local function main()
     atomic_write(bashrc, shell_text, "644")
     print("Updated " .. bashrc)
   end
-  print("Done. Ensure ~/.bashrc sources ~/.bashrc_local, then refresh the model catalog.")
+  if include_openrouter then
+    print("Done. OpenRouter integration installed. Ensure ~/.bashrc sources ~/.bashrc_local.")
+  else
+    print("Done. OpenRouter integration omitted. Ensure ~/.bashrc sources ~/.bashrc_local.")
+  end
 end
 
 local ok, err = pcall(main)

@@ -1,5 +1,4 @@
 default_permissions = "granular"
-model = "deepseek/deepseek-v4.1-flash"
 model_reasoning_effort = "high"
 approvals_reviewer = "auto_review"
 

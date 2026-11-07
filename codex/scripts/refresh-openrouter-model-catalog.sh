@@ -32,7 +32,7 @@ Options:
   --endpoint URL   Override the OpenRouter models endpoint (primarily for tests).
   -h, --help       Show this help text.
 
-OPEN_ROUTER_KEY must be set in the environment. It is never written to disk.
+OPEN_ROUTER_KEY must be set in the environment. The key is never written to disk.
 EU exception metadata is fetched without credentials. Use codex pick to apply
 the generated routing metadata; ordinary model selection does not enforce it.
 EOF

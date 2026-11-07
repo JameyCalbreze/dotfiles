@@ -4,6 +4,7 @@ set -euo pipefail
 ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 PICKER="$ROOT/scripts/pick-codex-model.sh"
 BASHRC="$ROOT/../bash/codex.bash"
+OPTIONAL_BASHRC="$ROOT/../bash/codex-openrouter.bash"
 work=$(mktemp -d)
 trap 'rm -rf -- "$work"' EXIT
 original_path=$PATH
@@ -100,9 +101,9 @@ assert_clean_catalog() { cmp -s "$catalog" "$work/catalog.before.json" || fail '
 reset_case
 run_picker -- --profile granular -C "$work/project with spaces" 'a prompt with "quotes" and spaces'
 assert_jq '.[0:8] == ["--model", "anthropic/claude-test:batch", "-c", "model_reasoning_effort=\"high\"", "-c", "model_provider=\"open_router\"", "-c", .[7]]' "$work/argv.json"
-assert_jq '.[8:] == ["--profile", "granular", "-C", .[11], "a prompt with \"quotes\" and spaces"]' "$work/argv.json"
+assert_jq '.[8] == "-c" and (.[9] | startswith("model_providers.open_router=")) and .[10:] == ["--profile", "granular", "-C", .[13], "a prompt with \"quotes\" and spaces"]' "$work/argv.json"
 jq -e --arg expected "model_catalog_json=\"$catalog\"" '.[7] == $expected' "$work/argv.json" >/dev/null || fail 'incorrect catalogue override'
-jq -e --arg dir "$work/project with spaces" '.[11] == $dir' "$work/argv.json" >/dev/null || fail 'directory argument split'
+jq -e --arg dir "$work/project with spaces" '.[13] == $dir' "$work/argv.json" >/dev/null || fail 'directory argument split'
 [[ $(head -n 1 "$work/rows.2") == $'0\thigh\t(default)' ]] || fail 'default effort was not first'
 [[ $(cat "$work/fzf-env.1") == '|' && $(cat "$work/fzf-env.2") == '|' ]] || fail 'inherited fzf options were not cleared'
 assert_jq 'index("--no-multi") != null and index("--with-nth=2..") != null and index("--nth=2..") == null' "$work/fzf-args.1.json"
@@ -138,7 +139,7 @@ cmp -s "$work/eu-catalog.json" "$work/eu-catalog.before.json" || fail 'EU launch
 reset_case
 export STUB_MODEL_SLUG=openai/no-reasoning-test
 run_picker --catalog "$work/eu-catalog.json"
-assert_jq 'length == 8 and .[5] == "model_provider=\"open_router\""' "$work/argv.json"
+assert_jq 'length == 10 and .[5] == "model_provider=\"open_router\""' "$work/argv.json"
 
 # Display control characters cannot create rows; metadata is independent of display text.
 reset_case
@@ -156,13 +157,13 @@ export STUB_READ_STDIN=1
 )
 [[ $(cat "$work/cwd") == "$work/project with spaces" ]] || fail 'working directory changed'
 [[ $(cat "$work/stdin") == 'original stdin' ]] || fail 'stdin was consumed'
-assert_jq '.[8:] == ["--", "--model is prompt text"]' "$work/argv.json"
+assert_jq '.[10:] == ["--", "--model is prompt text"]' "$work/argv.json"
 
 # Ordinary configuration overrides and option values are forwarded verbatim.
 reset_case
 run_picker -- -c 'approval_policy="never"' --config=tui.status_line_use_colors=false \
   -C --model --profile=granular
-assert_jq '.[8:] == ["-c", "approval_policy=\"never\"", "--config=tui.status_line_use_colors=false", "-C", "--model", "--profile=granular"]' "$work/argv.json"
+assert_jq '.[10:] == ["-c", "approval_policy=\"never\"", "--config=tui.status_line_use_colors=false", "-C", "--model", "--profile=granular"]' "$work/argv.json"
 
 reset_case
 export STUB_CODEX_STATUS=37
@@ -325,8 +326,8 @@ REFRESH
 chmod +x "$work/codex-home/scripts/"*.sh
 run_bash_function() {
   env -u OPEN_ROUTER_KEY -u BEDROCK_API_KEY -u FOUNDRY_KIMIK_KEY \
-    HOME="$work/home" CODEX_HOME="$work/codex-home" BASHRC="$BASHRC" \
-    "$bash_bin" -c 'source "$BASHRC"; "$@"' bash "$@"
+    HOME="$work/home" CODEX_HOME="$work/codex-home" BASHRC="$BASHRC" OPTIONAL_BASHRC="$OPTIONAL_BASHRC" \
+    "$bash_bin" -c 'source "$BASHRC"; source "$OPTIONAL_BASHRC"; "$@"' bash "$@"
 }
 reset_case
 run_bash_function codex pick -C 'directory with spaces' 'test prompt'
@@ -347,8 +348,8 @@ done
 run_bash_function codex-openrouter-models --target 'path with spaces'
 assert_jq '.key == "mocked-router" and .args == ["--target", "path with spaces"]' "$work/refresh.json"
 # Existing environment overrides files; absent credentials do not prevent invocation.
-env HOME="$work/home" CODEX_HOME="$work/codex-home" BASHRC="$BASHRC" OPEN_ROUTER_KEY=from-env \
-  "$bash_bin" -c 'source "$BASHRC"; codex-openrouter-models --test'
+env HOME="$work/home" CODEX_HOME="$work/codex-home" BASHRC="$BASHRC" OPTIONAL_BASHRC="$OPTIONAL_BASHRC" OPEN_ROUTER_KEY=from-env \
+  "$bash_bin" -c 'source "$BASHRC"; source "$OPTIONAL_BASHRC"; codex-openrouter-models --test'
 assert_jq '.key == "from-env" and .args == ["--test"]' "$work/refresh.json"
 rm -f "$work/home/.secrets/"*
 reset_case
@@ -356,8 +357,8 @@ run_bash_function codex exec 'no credentials'
 assert_jq '.router == "" and .bedrock == "" and .foundry == ""' "$work/env.json"
 # The helper runs in a subshell and does not leave loaded secrets in the shell.
 printf '%s' secret >"$work/home/.secrets/openrouter"
-env -u OPEN_ROUTER_KEY HOME="$work/home" CODEX_HOME="$work/codex-home" BASHRC="$BASHRC" \
-  "$bash_bin" -c 'source "$BASHRC"; codex; [[ -z ${OPEN_ROUTER_KEY+x} ]]' || fail 'credential leaked into parent shell'
+env -u OPEN_ROUTER_KEY HOME="$work/home" CODEX_HOME="$work/codex-home" BASHRC="$BASHRC" OPTIONAL_BASHRC="$OPTIONAL_BASHRC" \
+  "$bash_bin" -c 'source "$BASHRC"; source "$OPTIONAL_BASHRC"; codex; [[ -z ${OPEN_ROUTER_KEY+x} ]]' || fail 'credential leaked into parent shell'
 
 assert_clean_catalog
 printf 'PASS: Codex model picker, Bash routing, and refresh wrapper\n'

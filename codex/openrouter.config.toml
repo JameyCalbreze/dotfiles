@@ -1,0 +1,16 @@
+# Installed only with --include-openrouter.
+model = "openai/gpt-5.4"
+model_provider = "open_router"
+
+[model_providers.open_router]
+name = "Open Router"
+base_url = "https://openrouter.ai/api/v1"
+env_key = "OPEN_ROUTER_KEY"
+wire_api = "responses"
+
+[profiles.openrouter_glm]
+model_provider = "open_router"
+model = "z-ai/glm-5.2"
+model_context_window = 1000000
+model_auto_compact_token_limit = 990000
+model_max_output_tokens = 128000

@@ -210,7 +210,8 @@ effort=$(jq -r --argjson index "$effort_index" '.[$index].effort' <<< "$efforts_
 effort_value=$(jq -Rn --arg value "$effort" '$value')
 catalog_value=$(jq -Rn --arg value "$catalog" '$value')
 provider=open_router
-routing_args=()
+# Do not install a provider globally: bind it only to this opted-in launch.
+routing_args=(-c 'model_providers.open_router={name="OpenRouter",base_url="https://openrouter.ai/api/v1",env_key="OPEN_ROUTER_KEY",wire_api="responses"}')
 if [[ $(jq -r '.openrouter_region // ""' <<< "$model_json") == eu ]]; then
   provider=open_router_eu_exception
   # Replace the entire provider table: inherited global-domain settings cannot
