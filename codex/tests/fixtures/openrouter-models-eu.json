@@ -1,0 +1,51 @@
+{
+  "data": [
+    {
+      "id": "openai/eu-exception-test",
+      "name": "EU Exception Test",
+      "context_length": 1050000,
+      "architecture": {
+        "input_modalities": [
+          "text",
+          "image"
+        ],
+        "output_modalities": [
+          "text"
+        ]
+      },
+      "reasoning": {
+        "default_effort": "medium",
+        "supported_efforts": [
+          "high",
+          "medium",
+          "low"
+        ]
+      }
+    },
+    {
+      "id": "openai/gpt-test",
+      "name": "EU GPT Test",
+      "context_length": 300000,
+      "architecture": {
+        "input_modalities": [
+          "text"
+        ],
+        "output_modalities": [
+          "text"
+        ]
+      }
+    },
+    {
+      "id": "openai/image-test",
+      "context_length": 100000,
+      "architecture": {
+        "input_modalities": [
+          "text"
+        ],
+        "output_modalities": [
+          "image"
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,26 @@
+{
+  "models": [
+    {
+      "slug": "anthropic/claude-test:batch",
+      "display_name": "Claude Test Batch",
+      "default_reasoning_level": "high",
+      "supported_reasoning_levels": [
+        {"effort": "low", "description": "Low"},
+        {"effort": "high", "description": "High"},
+        {"effort": "max", "description": "Maximum"}
+      ]
+    },
+    {
+      "slug": "openai/no-reasoning-test",
+      "display_name": "No Reasoning Test",
+      "default_reasoning_level": "none",
+      "supported_reasoning_levels": [{"effort": "none", "description": "None"}]
+    },
+    {
+      "slug": "openai/quoted-name-test",
+      "display_name": "Name with \"quotes\" and a\ttab\nnewline",
+      "default_reasoning_level": "xhigh",
+      "supported_reasoning_levels": [{"effort": "xhigh"}]
+    }
+  ]
+}

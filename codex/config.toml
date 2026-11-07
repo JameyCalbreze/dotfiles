@@ -1,0 +1,39 @@
+model = "openai/gpt-5.4"
+model_provider = "open_router"
+approval_policy = "on-request"
+approvals_reviewer = "user"
+model_reasoning_effort = "medium"
+
+[model_providers.azure_kimik]
+name = "azure/kimik"
+base_url = "https://jameycalbreze-5520-resource.services.ai.azure.com/openai/v1"
+env_key = "FOUNDRY_KIMIK_KEY"
+wire_api = "responses"
+
+[model_providers.open_router]
+name = "Open Router"
+base_url = "https://openrouter.ai/api/v1"
+env_key = "OPEN_ROUTER_KEY"
+wire_api = "responses"
+
+[profiles.bedrock_glm]
+model_provider = "aws_bedrock"
+model = "zai.glm-5"
+model_context_window = 200000
+model_auto_compact_token_limit = 195000
+model_max_output_tokens = 128000
+
+[profiles.openrouter_glm]
+model_provider = "open_router"
+model = "z-ai/glm-5.2"
+model_context_window = 1000000
+model_auto_compact_token_limit = 990000
+model_max_output_tokens = 128000
+
+[tui]
+status_line = ["model-with-reasoning", "current-dir", "model", "reasoning", "context-used", "used-tokens", "total-input-tokens", "total-output-tokens"]
+status_line_use_colors = true
+
+[features]
+hooks = true
+terminal_resize_reflow = true

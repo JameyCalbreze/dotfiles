@@ -1,0 +1,10 @@
+__pycache__/
+*.py[cod]
+# Codex runtime state and credentials do not belong in this repository.
+**/auth.json
+**/history.jsonl
+**/sessions/
+**/*.sqlite*
+**/models.json
+**/models.json.*.bak
+**/.secrets/

@@ -1,0 +1,7 @@
+# One OpenRouter model-ID prefix per line. Blank lines and comments are ignored.
+# Add or remove families, then run scripts/refresh-openrouter-model-catalog.sh.
+openai/
+anthropic/
+z-ai/
+deepseek/
+moonshotai/

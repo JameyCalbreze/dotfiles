@@ -1,0 +1,44 @@
+{
+  "data": [
+    {
+      "id": "openai/gpt-test",
+      "name": "GPT Test",
+      "context_length": 200000,
+      "architecture": {
+        "input_modalities": ["text"],
+        "output_modalities": ["text"]
+      },
+      "reasoning": {
+        "default_effort": "high",
+        "supported_efforts": ["low", "high"]
+      }
+    },
+    {
+      "id": "anthropic/claude-test",
+      "name": "Claude Test",
+      "context_length": 100000,
+      "architecture": {
+        "input_modalities": ["text"],
+        "output_modalities": ["text"]
+      }
+    },
+    {
+      "id": "openai/image-test",
+      "name": "Image Test",
+      "context_length": 100000,
+      "architecture": {
+        "input_modalities": ["text"],
+        "output_modalities": ["image"]
+      }
+    },
+    {
+      "id": "google/gemini-test",
+      "name": "Gemini Test",
+      "context_length": 100000,
+      "architecture": {
+        "input_modalities": ["text"],
+        "output_modalities": ["text"]
+      }
+    }
+  ]
+}

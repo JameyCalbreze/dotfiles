@@ -1,0 +1,18 @@
+default_permissions = "granular"
+model = "deepseek/deepseek-v4.1-flash"
+model_reasoning_effort = "high"
+approvals_reviewer = "auto_review"
+
+[auto_review]
+policy = """
+## File edits
+- All file edits within the workspace are allowed.
+- .git can NOT be modified.
+
+## Commands
+- Attempt to execute all commands.
+- If the return code is 134 this means the sandbox has blocked execution.
+"""
+
+[permissions.granular.filesystem.":workspace_roots"]
+"." = "read"
