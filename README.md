@@ -62,6 +62,22 @@ changing its target. The installer does not edit `~/.bashrc` or install
 packages. On the original machine, `~/.codex` is itself a Git checkout, so
 installing there will appear as changes in that separate checkout.
 
+## Codex approval rules
+
+The installer ensures every nonempty, non-comment line in
+`codex/rules/default.rules` is present as an exact line in
+`$CODEX_HOME/rules/default.rules` (or `~/.codex/rules/default.rules`). Missing
+lines are appended; existing lines and other rules files are left intact.
+Matching is textual, so differently formatted equivalent rules are not treated
+as matches. Removing a line from the shared file does not remove it from an
+existing installation. Changed files are backed up; a changed symlink is backed
+up and replaced with a local file without modifying its target.
+
+These rules include broad command-prefix approvals such as `git` and Python.
+Review them before installing on another machine. Existing rules may also affect
+the effective policy; review the complete local rules rather than assuming the
+shared entries are the only ones in force.
+
 ## Herdr and Ghostty
 
 The installer links the shared Herdr and Ghostty configuration files on both
@@ -167,8 +183,8 @@ or matching files under `~/.secrets` when present. The optional integration
 uses `OPEN_ROUTER_KEY` or `~/.secrets/openrouter` for the OpenRouter picker and
 catalog refresh. Keys are never copied into this repository; file-loaded
 secrets stay in the invoked process.
-Catalogs, backups, sessions, databases, logs, machine trust, approval rules,
-and Herdr-managed hooks are not synchronized.
+Catalogs, backups, sessions, databases, logs, machine trust, other approval
+rules files, and Herdr-managed hooks are not synchronized.
 
 ## Returning to the default installation
 

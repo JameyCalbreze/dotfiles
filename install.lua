@@ -342,6 +342,30 @@ local function prepare_configs(codex_home, include_openrouter)
   return prepared, state_file, state_text
 end
 
+-- Treat each nonempty, non-comment shared rule line as an exact requirement.
+-- Existing local rules (including rules no longer shared) are never removed.
+local function prepare_rules(source, target)
+  if not is_file(source) then error("missing repository file: " .. source, 0) end
+  local parent = dirname(target)
+  if (exists(parent) or is_link(parent)) and not is_dir(parent) then
+    error("rules directory is not a directory: " .. parent, 0)
+  end
+  if is_dir(target) then error("refusing to replace directory: " .. target, 0) end
+  if is_link(target) and not exists(target) then error("broken rules symlink: " .. target, 0) end
+  local original = exists(target) and read_file(target) or ""
+  local present = {}
+  for line in (original .. "\n"):gmatch("([^\n]*)\n") do present[line] = true end
+  local text = original
+  for line in (read_file(source) .. "\n"):gmatch("([^\n]*)\n") do
+    if line:match("%S") and not line:match("^%s*#") and not present[line] then
+      if #text > 0 and text:sub(-1) ~= "\n" then text = text .. "\n" end
+      text = text .. line .. "\n"
+      present[line] = true
+    end
+  end
+  return { target = target, text = text, changed = text ~= original or not exists(target) }
+end
+
 local function install_link(source, target)
   command("mkdir -p " .. quote(dirname(target)))
   if is_link(target) and capture("readlink " .. quote(target)) == source then return end
@@ -529,13 +553,15 @@ local function main()
     if exists(link[2]) and is_dir(link[2]) and not is_link(link[2]) then error("refusing to replace directory: " .. link[2], 0) end
   end
   -- Do not let custom config paths overwrite another managed file or a source.
-  local destinations = {}
+  local rules_source = join(ROOT, "codex/rules/default.rules")
+  local rules_target = join(codex_home, "rules/default.rules")
+  local destinations = { [canonical_entry(rules_target)] = true }
   for _, path in ipairs({ join(codex_home, "config.toml"), join(codex_home, "granular.config.toml"),
                            join(codex_home, STATE_NAME), join(home, ".bashrc_local"),
                            join(zdotdir, ".zshrc"), join(zdotdir, ".zsh_profile") }) do
     destinations[canonical_entry(path)] = true
   end
-  local sources = {}
+  local sources = { [canonical_entry(rules_source)] = true }
   for _, link in ipairs(links) do sources[canonical_entry(link[1])] = true end
   for _, link in ipairs(optional_links) do sources[canonical_entry(link[1])] = true end
   for _, name in ipairs({ "config.toml", "granular.config.toml", "openrouter.config.toml" }) do
@@ -547,6 +573,8 @@ local function main()
     if sources[target] then error("refusing to replace repository file: " .. link[2], 0) end
     destinations[target] = true
   end
+  if sources[canonical_entry(rules_target)] then error("refusing to replace repository file: " .. rules_target, 0) end
+  local rules = prepare_rules(rules_source, rules_target)
   local configs, state_file, state_text = prepare_configs(codex_home, include_openrouter)
   local shell_files = {
     prepare_shell_file(join(home, ".bashrc_local"), SOURCE_LINE, OPTIONAL_SOURCE_LINE, include_openrouter),
@@ -574,6 +602,12 @@ local function main()
         io.stderr:write("install: leaving unmanaged optional file " .. target .. "; review it separately\n")
       end
     end
+  end
+  if rules.changed then
+    command("mkdir -p " .. quote(dirname(rules.target)))
+    if exists(rules.target) or is_link(rules.target) then backup(rules.target) end
+    atomic_write(rules.target, rules.text, "600")
+    print("Updated " .. rules.target)
   end
   for _, config in ipairs(configs) do
     if config.changed then

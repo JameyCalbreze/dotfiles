@@ -86,6 +86,70 @@ class InstallerTests(unittest.TestCase):
         self.assertFalse(list(self.home.glob('*.dotfiles-backup.*')))
         self.assertFalse(list(self.codex.glob('*.dotfiles-backup.*')))
 
+    def test_rules_additive_install_and_repeat(self):
+        rules_dir = self.codex / 'rules'
+        rules_dir.mkdir(parents=True)
+        rules = rules_dir / 'default.rules'
+        shared = (self.repo / 'codex/rules/default.rules').read_text().splitlines()
+        self.assertTrue(shared)
+        original = '# local comment\n' + shared[0] + '\n' + shared[1] + ' # local suffix\nlocal_rule()'
+        rules.write_text(original)
+        other = rules_dir / 'local.rules'
+        other.write_text('other rules\n')
+        self.install()
+        self.assertFalse(rules.is_symlink())
+        text = rules.read_text()
+        self.assertTrue(text.startswith(original + '\n'))
+        self.assertTrue(all(text.splitlines().count(line) == 1 for line in shared))
+        self.assertEqual((rules_dir / 'default.rules.dotfiles-backup.1').read_text(), original)
+        self.assertEqual(other.read_text(), 'other rules\n')
+        self.install()
+        self.assertEqual(rules.read_text(), text)
+        self.assertFalse((rules_dir / 'default.rules.dotfiles-backup.2').exists())
+        (self.repo / 'codex/rules/default.rules').write_text(shared[0] + '\nnew_rule()\n')
+        self.install()
+        self.assertEqual(rules.read_text(), text + 'new_rule()\n')
+        self.assertIn(shared[-1], rules.read_text().splitlines())
+
+    def test_rules_fresh_install_and_optional_mode(self):
+        for optional in (False, True):
+            with self.subTest(optional=optional):
+                self.codex = self.home / ('optional' if optional else 'default')
+                self.env['CODEX_HOME'] = str(self.codex)
+                self.install(include_openrouter=optional)
+                rules = self.codex / 'rules/default.rules'
+                self.assertFalse(rules.is_symlink())
+                self.assertEqual(rules.read_text(), (self.repo / 'codex/rules/default.rules').read_text())
+
+    def test_rules_symlink_backup_does_not_modify_target(self):
+        rules_dir = self.codex / 'rules'
+        rules_dir.mkdir(parents=True)
+        old = self.home / 'old rules'
+        old.write_text('local_rule()\n')
+        rules = rules_dir / 'default.rules'
+        rules.symlink_to(old)
+        self.install()
+        self.assertFalse(rules.is_symlink())
+        self.assertTrue(rules.read_text().startswith('local_rule()\n'))
+        self.assertEqual(old.read_text(), 'local_rule()\n')
+        backup = rules_dir / 'default.rules.dotfiles-backup.1'
+        self.assertTrue(backup.is_symlink())
+        self.assertEqual(backup.resolve(), old)
+
+    def test_rules_preflight_failures_do_not_change_home(self):
+        shared = self.repo / 'codex/rules/default.rules'
+        text = shared.read_text()
+        shared.unlink()
+        result = self.install(False)
+        self.assertIn('missing repository file', result.stderr)
+        self.assertFalse(self.codex.exists())
+        shared.write_text(text)
+        (self.codex / 'rules/default.rules').mkdir(parents=True)
+        self.install(False)
+        self.assertTrue((self.codex / 'rules/default.rules').is_dir())
+        self.assertFalse((self.codex / 'AGENTS.md').exists())
+        self.assertFalse((self.home / '.bashrc_local').exists())
+
     def test_removed_azure_kimik_provider_is_removed_on_upgrade(self):
         shared_config = self.repo / 'codex/config.toml'
         current_config = shared_config.read_text()
