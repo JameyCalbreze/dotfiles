@@ -29,7 +29,14 @@ startup content is preserved:
 
 - Bash: a guarded source line is added to `~/.bashrc_local`. Ensure `~/.bashrc`
   sources that file.
-- Zsh: a guarded source line is added directly to `${ZDOTDIR:-$HOME}/.zshrc`.
+- Zsh: managed integration lines are placed in
+  `${ZDOTDIR:-$HOME}/.zsh_profile`, and `.zshrc` sources that file. The
+  installer recognizes common existing profile imports and avoids duplicating
+  its own source line on updates. It moves its exact legacy direct-source
+  lines out of `.zshrc`, preserving other content and backing up changed files.
+  Complex user-written shell logic is not parsed; review existing imports if
+  they use a nonstandard form.
+
   The installer uses `ZDOTDIR` from its environment, or `HOME` when unset; the
   chosen directory must already exist. If `.zshenv` sets an unexported
   `ZDOTDIR`, pass the same value to the installer explicitly.
@@ -140,15 +147,16 @@ and Herdr-managed hooks are not synchronized.
 
 Re-run `lua install.lua` **without** `--include-openrouter`. It removes settings
 that this installer previously managed, removes optional symlinks that still
-point to this checkout, and removes its optional Bash and Zsh source lines. It
-does not delete a generated local catalog or unmanaged files. Start a new shell
+point to this checkout, and removes its optional Bash and Zsh profile source
+lines. The `.zshrc` import of `.zsh_profile` remains in place. It does not
+delete a generated local catalog or unmanaged files. Start a new shell
 so any previously loaded OpenRouter functions are no longer active. Re-running the
 installer with the flag restores the optional integration.
 
 If existing local configs contain unmanaged OpenRouter references, default
 installation stops before modifying anything; review those references manually
 or use the flag only on an approved machine. The installer leaves unmanaged
-optional files and existing custom Bash definitions untouched, and warns about
+optional files and existing custom Bash and Zsh definitions untouched, and warns about
 unmanaged optional files it finds. In particular, the original machine's
 independent `~/.codex` and `.bashrc_local` may already use OpenRouter.
 

@@ -54,6 +54,7 @@ local SOURCE_LINE = '[[ -f "${CODEX_HOME:-$HOME/.codex}/scripts/codex-shell.bash
 local OPTIONAL_SOURCE_LINE = '[[ -f "${CODEX_HOME:-$HOME/.codex}/scripts/codex-openrouter-shell.bash" ]] && source "${CODEX_HOME:-$HOME/.codex}/scripts/codex-openrouter-shell.bash"'
 local ZSH_SOURCE_LINE = '[[ -f "${CODEX_HOME:-$HOME/.codex}/scripts/codex-shell.zsh" ]] && source "${CODEX_HOME:-$HOME/.codex}/scripts/codex-shell.zsh"'
 local ZSH_OPTIONAL_SOURCE_LINE = '[[ -f "${CODEX_HOME:-$HOME/.codex}/scripts/codex-openrouter-shell.zsh" ]] && source "${CODEX_HOME:-$HOME/.codex}/scripts/codex-openrouter-shell.zsh"'
+local ZSH_PROFILE_SOURCE_LINE = '[[ -f "${ZDOTDIR:-$HOME}/.zsh_profile" ]] && source "${ZDOTDIR:-$HOME}/.zsh_profile"'
 local STATE_NAME = ".dotfiles-managed-config.json"
 
 local function exists(path) return succeeds("test -e " .. quote(path)) end
@@ -339,17 +340,22 @@ local function install_link(source, target)
   print("Linked " .. target .. " -> " .. source)
 end
 
-local function remove_source_line(text, source_line)
-  local from = 1
+local function remove_source_line(text, source_line, keep_first)
+  local from, seen = 1, false
   while true do
     local first, last = text:find(source_line, from, true)
     if not first then return text end
     local before = first == 1 or text:sub(first - 1, first - 1) == "\n"
     local after = last == #text or text:sub(last + 1, last + 1) == "\n"
     if before and after then
-      if last < #text then last = last + 1 end
-      text = text:sub(1, first - 1) .. text:sub(last + 1)
-      from = first
+      if keep_first and not seen then
+        seen = true
+        from = last + 1
+      else
+        if last < #text then last = last + 1 end
+        text = text:sub(1, first - 1) .. text:sub(last + 1)
+        from = first
+      end
     else
       from = last + 1
     end
@@ -361,6 +367,15 @@ local function append_source_line(text, source_line)
   return text .. source_line .. "\n"
 end
 
+local function shell_file_result(path, original, text)
+  local mode = "644"
+  if exists(path) then
+    mode = capture("stat -L -c '%a' " .. quote(path) .. " 2>/dev/null || stat -L -f '%Lp' " .. quote(path) .. " 2>/dev/null")
+    if not mode:match("^[0-7]+$") or #mode > 4 then error("invalid file mode for " .. path, 0) end
+  end
+  return { path = path, text = text, changed = text ~= original, mode = mode }
+end
+
 local function prepare_shell_file(path, common_line, optional_line, include_openrouter)
   local original = exists(path) and read_file(path) or ""
   local text = remove_source_line(original, optional_line)
@@ -370,12 +385,65 @@ local function prepare_shell_file(path, common_line, optional_line, include_open
   end
   if not has_common then text = append_source_line(text, common_line) end
   if include_openrouter then text = append_source_line(text, optional_line) end
-  local mode = "644"
-  if exists(path) then
-    mode = capture("stat -L -c '%a' " .. quote(path) .. " 2>/dev/null || stat -L -f '%Lp' " .. quote(path) .. " 2>/dev/null")
-    if not mode:match("^[0-7]+$") or #mode > 4 then error("invalid file mode for " .. path, 0) end
+  return shell_file_result(path, original, text)
+end
+
+-- Recognize common user-owned imports so the installer does not add a second
+-- import. Arbitrary shell code is deliberately not interpreted or rewritten.
+local function has_zsh_profile_source(text, home, zdotdir, has_zdotdir)
+  local profile = join(zdotdir, ".zsh_profile")
+  local targets = {
+    ['"${ZDOTDIR:-$HOME}/.zsh_profile"'] = true,
+    ['${ZDOTDIR:-$HOME}/.zsh_profile'] = true,
+    ['"' .. profile .. '"'] = true,
+    ["'" .. profile .. "'"] = true,
+    [profile] = true,
+  }
+  if home == zdotdir then
+    for _, target in ipairs({ '~/.zsh_profile', '$HOME/.zsh_profile', '"$HOME/.zsh_profile"',
+                              '${HOME}/.zsh_profile', '"${HOME}/.zsh_profile"' }) do
+      targets[target] = true
+    end
   end
-  return { path = path, text = text, changed = text ~= original, mode = mode }
+  if has_zdotdir then
+    for _, target in ipairs({ '$ZDOTDIR/.zsh_profile', '"$ZDOTDIR/.zsh_profile"',
+                              '${ZDOTDIR}/.zsh_profile', '"${ZDOTDIR}/.zsh_profile"' }) do
+      targets[target] = true
+    end
+  end
+  for line in (text .. "\n"):gmatch("(.-)\n") do
+    local trimmed = line:match('^%s*(.-)%s*$'):gsub('%s+#.*$', ''):gsub('%s*;%s*$', '')
+    local target = trimmed:match('^source%s+(.+)$') or trimmed:match('^%.%s+(.+)$')
+    if not target then
+      target = trimmed:match('^%[%[.-%]%]%s*&&%s*source%s+(.+)$')
+            or trimmed:match('^%[%[.-%]%]%s*&&%s*%.%s+(.+)$')
+            or trimmed:match('^%[.-%]%s*&&%s*source%s+(.+)$')
+            or trimmed:match('^%[.-%]%s*&&%s*%.%s+(.+)$')
+            or trimmed:match('^if%s+.-;%s*then%s+source%s+(.-)%s*;%s*fi%s*;?$')
+            or trimmed:match('^if%s+.-;%s*then%s+%.%s+(.-)%s*;%s*fi%s*;?$')
+    end
+    if target then
+      target = target:match('^%s*(.-)%s*$'):gsub('%s+2>%s*/dev/null%s*$', '')
+      target = target:match('^(.-)%s*;%s*.+$') or target
+      if targets[target:match('^%s*(.-)%s*$')] then return true end
+    end
+  end
+  return false
+end
+
+local function prepare_zsh_rc(path, home, zdotdir, has_zdotdir)
+  local original = exists(path) and read_file(path) or ""
+  -- Migrate only the exact lines installed by earlier versions.
+  local text = remove_source_line(original, ZSH_SOURCE_LINE)
+  text = remove_source_line(text, ZSH_OPTIONAL_SOURCE_LINE)
+  local without_managed = remove_source_line(text, ZSH_PROFILE_SOURCE_LINE)
+  if has_zsh_profile_source(without_managed, home, zdotdir, has_zdotdir) then
+    text = without_managed
+  else
+    text = remove_source_line(text, ZSH_PROFILE_SOURCE_LINE, true)
+    if text == without_managed then text = append_source_line(text, ZSH_PROFILE_SOURCE_LINE) end
+  end
+  return shell_file_result(path, original, text)
 end
 
 local function main()
@@ -394,7 +462,8 @@ local function main()
   elseif codex_home:sub(1, 2) == "~/" then codex_home = join(home, codex_home:sub(3)) end
   codex_home = absolute(codex_home)
   local zdotdir = os.getenv("ZDOTDIR")
-  if not zdotdir or zdotdir == "" then zdotdir = home end
+  local has_zdotdir = zdotdir ~= nil and zdotdir ~= ""
+  if not has_zdotdir then zdotdir = home end
   if zdotdir == "~" then zdotdir = home
   elseif zdotdir:sub(1, 2) == "~/" then zdotdir = join(home, zdotdir:sub(3)) end
   zdotdir = absolute(zdotdir)
@@ -428,7 +497,8 @@ local function main()
   local configs, state_file, state_text = prepare_configs(codex_home, include_openrouter)
   local shell_files = {
     prepare_shell_file(join(home, ".bashrc_local"), SOURCE_LINE, OPTIONAL_SOURCE_LINE, include_openrouter),
-    prepare_shell_file(join(zdotdir, ".zshrc"), ZSH_SOURCE_LINE, ZSH_OPTIONAL_SOURCE_LINE, include_openrouter),
+    prepare_shell_file(join(zdotdir, ".zsh_profile"), ZSH_SOURCE_LINE, ZSH_OPTIONAL_SOURCE_LINE, include_openrouter),
+    prepare_zsh_rc(join(zdotdir, ".zshrc"), home, zdotdir, has_zdotdir),
   }
   command("mkdir -p " .. quote(codex_home))
   for _, link in ipairs(links) do install_link(link[1], link[2]) end

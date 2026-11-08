@@ -13,6 +13,9 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 ZSH = os.environ.get('TEST_ZSH') or shutil.which('zsh')
+ZSH_SOURCE = '[[ -f "${CODEX_HOME:-$HOME/.codex}/scripts/codex-shell.zsh" ]] && source "${CODEX_HOME:-$HOME/.codex}/scripts/codex-shell.zsh"'
+ZSH_OPTIONAL = '[[ -f "${CODEX_HOME:-$HOME/.codex}/scripts/codex-openrouter-shell.zsh" ]] && source "${CODEX_HOME:-$HOME/.codex}/scripts/codex-openrouter-shell.zsh"'
+ZSH_PROFILE_SOURCE = '[[ -f "${ZDOTDIR:-$HOME}/.zsh_profile" ]] && source "${ZDOTDIR:-$HOME}/.zsh_profile"'
 
 
 class InstallerTests(unittest.TestCase):
@@ -63,6 +66,9 @@ class InstallerTests(unittest.TestCase):
         self.assertFalse((self.codex / 'openrouter-model-exceptions.json').exists())
         self.assertNotIn('openrouter', (self.home / '.bashrc_local').read_text())
         self.assertNotIn('openrouter', (self.home / '.zshrc').read_text())
+        self.assertNotIn('openrouter', (self.home / '.zsh_profile').read_text())
+        self.assertEqual((self.home / '.zshrc').read_text().count(ZSH_PROFILE_SOURCE), 1)
+        self.assertEqual((self.home / '.zsh_profile').read_text().count(ZSH_SOURCE), 1)
         self.assertFalse((self.codex / 'models.json').exists())
         self.assertNotIn('model_catalog_json', self.load('config.toml'))
         profile = self.load('granular.config.toml')
@@ -70,10 +76,12 @@ class InstallerTests(unittest.TestCase):
         self.assertEqual(profile['permissions']['granular']['filesystem'][':workspace_roots']['.'], 'read')
         shell_before = (self.home / '.bashrc_local').read_text()
         zsh_before = (self.home / '.zshrc').read_text()
+        zsh_profile_before = (self.home / '.zsh_profile').read_text()
         config_before = (self.codex / 'config.toml').read_text()
         self.install()
         self.assertEqual((self.home / '.bashrc_local').read_text(), shell_before)
         self.assertEqual((self.home / '.zshrc').read_text(), zsh_before)
+        self.assertEqual((self.home / '.zsh_profile').read_text(), zsh_profile_before)
         self.assertEqual((self.codex / 'config.toml').read_text(), config_before)
         self.assertFalse(list(self.home.glob('*.dotfiles-backup.*')))
         self.assertFalse(list(self.codex.glob('*.dotfiles-backup.*')))
@@ -135,10 +143,14 @@ class InstallerTests(unittest.TestCase):
         shell = (self.home / '.bashrc_local').read_text()
         self.assertEqual(shell.count('source "${CODEX_HOME:-$HOME/.codex}/scripts/codex-openrouter-shell.bash"'), 1)
         zshrc = (self.home / '.zshrc').read_text()
-        self.assertEqual(zshrc.count('source "${CODEX_HOME:-$HOME/.codex}/scripts/codex-openrouter-shell.zsh"'), 1)
+        zsh_profile = (self.home / '.zsh_profile').read_text()
+        self.assertEqual(zshrc.count(ZSH_PROFILE_SOURCE), 1)
+        self.assertNotIn('codex-openrouter-shell.zsh', zshrc)
+        self.assertEqual(zsh_profile.count(ZSH_OPTIONAL), 1)
         self.install(include_openrouter=True)
         self.assertEqual((self.home / '.bashrc_local').read_text(), shell)
         self.assertEqual((self.home / '.zshrc').read_text(), zshrc)
+        self.assertEqual((self.home / '.zsh_profile').read_text(), zsh_profile)
         self.assertFalse((self.codex / 'config.toml.dotfiles-backup.1').exists())
 
     def test_default_after_opt_in_removes_only_managed_optional_installation(self):
@@ -158,6 +170,8 @@ class InstallerTests(unittest.TestCase):
         self.assertNotIn('model', self.load('granular.config.toml'))
         self.assertNotIn('codex-openrouter-shell.bash', (self.home / '.bashrc_local').read_text())
         self.assertNotIn('codex-openrouter-shell.zsh', (self.home / '.zshrc').read_text())
+        self.assertNotIn('codex-openrouter-shell.zsh', (self.home / '.zsh_profile').read_text())
+        self.assertEqual((self.home / '.zshrc').read_text().count(ZSH_PROFILE_SOURCE), 1)
         self.assertTrue(catalog.is_file(), 'generated local catalog must not be deleted')
         self.assertTrue((self.codex / 'scripts/strip-model-system-prompts.sh').is_symlink())
         self.assertTrue((self.codex / 'config.toml.dotfiles-backup.1').exists())
@@ -216,7 +230,9 @@ class InstallerTests(unittest.TestCase):
         self.env['ZDOTDIR'] = str(zdotdir)
         self.install()
         self.assertTrue(rc.read_text().startswith('alias n=nano\n'))
-        self.assertIn('codex-shell.zsh', rc.read_text())
+        profile = zdotdir / '.zsh_profile'
+        self.assertIn(ZSH_PROFILE_SOURCE, rc.read_text())
+        self.assertIn('codex-shell.zsh', profile.read_text())
         self.assertEqual(rc.stat().st_mode & 0o777, 0o600)
         self.assertEqual((zdotdir / '.zshrc.dotfiles-backup.1').read_text(), 'alias n=nano\n')
         self.assertFalse((self.home / '.zshrc').exists())
@@ -230,16 +246,193 @@ class InstallerTests(unittest.TestCase):
         self.assertEqual(rc.read_text(), previous)
         self.assertFalse((zdotdir / '.zshrc.dotfiles-backup.2').exists())
         self.install(include_openrouter=True)
-        self.assertIn('codex-openrouter-shell.zsh', rc.read_text())
+        self.assertIn('codex-openrouter-shell.zsh', profile.read_text())
+        self.assertNotIn('codex-openrouter-shell.zsh', rc.read_text())
         if ZSH:
             result = subprocess.run([ZSH, '-i', '-c', 'whence -w codex-openrouter-models'], env=self.env,
                                     cwd=self.home, text=True, capture_output=True)
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertIn('codex-openrouter-models: function', result.stdout)
         self.install()
-        self.assertNotIn('codex-openrouter-shell.zsh', rc.read_text())
+        self.assertNotIn('codex-openrouter-shell.zsh', profile.read_text())
+        self.assertEqual(rc.read_text().count(ZSH_PROFILE_SOURCE), 1)
         self.assertIn('alias n=nano', rc.read_text())
         self.assertEqual(rc.stat().st_mode & 0o777, 0o600)
+
+    def test_legacy_direct_zsh_sources_are_migrated_and_deduplicated(self):
+        rc = self.home / '.zshrc'
+        previous_rc = 'alias n=nano\n' + ZSH_SOURCE + '\n' + ZSH_OPTIONAL + '\n' + ZSH_SOURCE + '\n'
+        rc.write_text(previous_rc)
+        profile = self.home / '.zsh_profile'
+        profile.write_text('export PERSONAL_SETTING=keep\n')
+        self.install(include_openrouter=True)
+        self.assertEqual((self.home / '.zshrc.dotfiles-backup.1').read_text(), previous_rc)
+        self.assertTrue(rc.read_text().startswith('alias n=nano\n'))
+        self.assertNotIn(ZSH_SOURCE, rc.read_text())
+        self.assertNotIn(ZSH_OPTIONAL, rc.read_text())
+        self.assertEqual(rc.read_text().count(ZSH_PROFILE_SOURCE), 1)
+        self.assertTrue(profile.read_text().startswith('export PERSONAL_SETTING=keep\n'))
+        self.assertEqual(profile.read_text().count(ZSH_SOURCE), 1)
+        self.assertEqual(profile.read_text().count(ZSH_OPTIONAL), 1)
+        before_rc, before_profile = rc.read_text(), profile.read_text()
+        self.install(include_openrouter=True)
+        self.assertEqual(rc.read_text(), before_rc)
+        self.assertEqual(profile.read_text(), before_profile)
+        self.assertFalse((self.home / '.zshrc.dotfiles-backup.2').exists())
+        self.install()
+        self.assertEqual(rc.read_text().count(ZSH_PROFILE_SOURCE), 1)
+        self.assertEqual(profile.read_text().count(ZSH_SOURCE), 1)
+        self.assertNotIn(ZSH_OPTIONAL, profile.read_text())
+        self.assertIn('export PERSONAL_SETTING=keep', profile.read_text())
+
+    def test_common_existing_zsh_profile_imports_are_not_duplicated(self):
+        imports = (
+            'source ~/.zsh_profile',
+            '. "$HOME/.zsh_profile"',
+            'source "${HOME}/.zsh_profile" # keep user source',
+            '[[ -f "$HOME/.zsh_profile" ]] && source "$HOME/.zsh_profile"',
+            '[ -f "$HOME/.zsh_profile" ] && . "$HOME/.zsh_profile"',
+            'source "${ZDOTDIR:-$HOME}/.zsh_profile"',
+            'source "$HOME/.zsh_profile" 2>/dev/null',
+            'source ~/.zsh_profile; export PERSONAL_SETTING=keep',
+            'if [[ -f "$HOME/.zsh_profile" ]]; then source "$HOME/.zsh_profile"; fi',
+        )
+        for index, source_line in enumerate(imports):
+            with self.subTest(source=source_line):
+                home = self.base / f'existing-source-{index}'
+                home.mkdir()
+                self.home = home
+                self.codex = home / '.codex'
+                self.env['HOME'] = str(home)
+                self.env['CODEX_HOME'] = str(self.codex)
+                rc = home / '.zshrc'
+                original = '# existing setup\n' + source_line + '\n'
+                rc.write_text(original)
+                profile = home / '.zsh_profile'
+                profile.write_text('export TEST_PROFILE_LOADS=$(( ${TEST_PROFILE_LOADS:-0} + 1 ))\n')
+                self.install()
+                self.assertEqual(rc.read_text(), original)
+                self.assertFalse((home / '.zshrc.dotfiles-backup.1').exists())
+                self.assertEqual(profile.read_text().count(ZSH_SOURCE), 1)
+                self.install()
+                self.assertEqual(rc.read_text(), original)
+                self.assertEqual(profile.read_text().count(ZSH_SOURCE), 1)
+                if ZSH:
+                    env = dict(self.env, ZDOTDIR=str(home))
+                    env.pop('TEST_PROFILE_LOADS', None)
+                    result = subprocess.run([ZSH, '-i', '-c', 'print -r -- "loads=$TEST_PROFILE_LOADS"'],
+                                            env=env, cwd=home, text=True, capture_output=True)
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertIn('loads=1', result.stdout)
+
+    def test_existing_custom_zdotdir_profile_import_is_not_duplicated(self):
+        zdotdir = self.home / 'custom zsh config'
+        zdotdir.mkdir()
+        self.env['ZDOTDIR'] = str(zdotdir)
+        rc = zdotdir / '.zshrc'
+        original = 'source "$ZDOTDIR/.zsh_profile"\n'
+        rc.write_text(original)
+        profile = zdotdir / '.zsh_profile'
+        profile.write_text('export TEST_PROFILE_LOADS=$(( ${TEST_PROFILE_LOADS:-0} + 1 ))\n')
+        self.install()
+        self.install()
+        self.assertEqual(rc.read_text(), original)
+        self.assertEqual(profile.read_text().count(ZSH_SOURCE), 1)
+        if ZSH:
+            result = subprocess.run([ZSH, '-i', '-c', 'print -r -- "loads=$TEST_PROFILE_LOADS"'],
+                                    env=self.env, cwd=self.home, text=True, capture_output=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn('loads=1', result.stdout)
+
+    def test_duplicate_managed_profile_imports_collapse_to_one(self):
+        rc = self.home / '.zshrc'
+        rc.write_text('alias n=nano\n' + ZSH_PROFILE_SOURCE + '\n' + ZSH_PROFILE_SOURCE + '\n')
+        self.install()
+        self.assertEqual(rc.read_text().count(ZSH_PROFILE_SOURCE), 1)
+        self.assertIn('alias n=nano', rc.read_text())
+        self.install()
+        self.assertEqual(rc.read_text().count(ZSH_PROFILE_SOURCE), 1)
+
+    def test_existing_user_import_replaces_duplicate_managed_import(self):
+        rc = self.home / '.zshrc'
+        user_line = 'source "$HOME/.zsh_profile"'
+        rc.write_text(user_line + '\n' + ZSH_PROFILE_SOURCE + '\n')
+        (self.home / '.zsh_profile').write_text('export TEST_PROFILE_LOADS=$(( ${TEST_PROFILE_LOADS:-0} + 1 ))\n')
+        self.install()
+        self.assertEqual(rc.read_text(), user_line + '\n')
+        self.install()
+        self.assertEqual(rc.read_text(), user_line + '\n')
+        if ZSH:
+            env = dict(self.env, ZDOTDIR=str(self.home))
+            env.pop('TEST_PROFILE_LOADS', None)
+            result = subprocess.run([ZSH, '-i', '-c', 'print -r -- "loads=$TEST_PROFILE_LOADS"'],
+                                    env=env, cwd=self.home, text=True, capture_output=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn('loads=1', result.stdout)
+
+    def test_existing_managed_profile_source_stays_in_place_on_update(self):
+        rc = self.home / '.zshrc'
+        original = 'export BEFORE=1\n' + ZSH_PROFILE_SOURCE + '\nexport AFTER=1\n'
+        rc.write_text(original)
+        self.install()
+        self.install()
+        self.assertEqual(rc.read_text(), original)
+        self.assertFalse((self.home / '.zshrc.dotfiles-backup.1').exists())
+
+    def test_commented_import_does_not_disable_installation(self):
+        rc = self.home / '.zshrc'
+        original = '# source ~/.zsh_profile\n'
+        rc.write_text(original)
+        self.install()
+        self.assertTrue(rc.read_text().startswith(original))
+        self.assertEqual(rc.read_text().count(ZSH_PROFILE_SOURCE), 1)
+        self.assertEqual((self.home / '.zsh_profile').read_text().count(ZSH_SOURCE), 1)
+
+    def test_home_profile_import_is_distinct_with_custom_zdotdir(self):
+        zdotdir = self.home / 'custom zsh config'
+        zdotdir.mkdir()
+        self.env['ZDOTDIR'] = str(zdotdir)
+        rc = zdotdir / '.zshrc'
+        original = 'source "$HOME/.zsh_profile"\n'
+        rc.write_text(original)
+        home_profile = self.home / '.zsh_profile'
+        home_profile.write_text('export HOME_PROFILE_LOADED=1\n')
+        self.install()
+        self.assertEqual(home_profile.read_text(), 'export HOME_PROFILE_LOADED=1\n')
+        self.assertTrue(rc.read_text().startswith(original))
+        self.assertEqual(rc.read_text().count(ZSH_PROFILE_SOURCE), 1)
+        self.assertEqual((zdotdir / '.zsh_profile').read_text().count(ZSH_SOURCE), 1)
+        if ZSH:
+            result = subprocess.run([ZSH, '-i', '-c', 'print -r -- "home=$HOME_PROFILE_LOADED"; whence -w codex'],
+                                    env=self.env, cwd=self.home, text=True, capture_output=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn('home=1', result.stdout)
+            self.assertIn('codex: function', result.stdout)
+
+    def test_existing_profile_and_rc_symlinks_are_backed_up_without_touching_targets(self):
+        rc_target = self.home / 'original-zshrc'
+        profile_target = self.home / 'original-zsh-profile'
+        rc_target.write_text('alias n=nano\n')
+        profile_target.write_text('export PERSONAL_SETTING=keep\n')
+        profile_target.chmod(0o600)
+        (self.home / '.zshrc').symlink_to(rc_target)
+        (self.home / '.zsh_profile').symlink_to(profile_target)
+        self.install()
+        self.assertEqual(rc_target.read_text(), 'alias n=nano\n')
+        self.assertEqual(profile_target.read_text(), 'export PERSONAL_SETTING=keep\n')
+        self.assertEqual((self.home / '.zshrc.dotfiles-backup.1').resolve(), rc_target)
+        self.assertEqual((self.home / '.zsh_profile.dotfiles-backup.1').resolve(), profile_target)
+        self.assertFalse((self.home / '.zshrc').is_symlink())
+        self.assertFalse((self.home / '.zsh_profile').is_symlink())
+        self.assertEqual((self.home / '.zsh_profile').stat().st_mode & 0o777, 0o600)
+
+    def test_invalid_zsh_profile_fails_before_modifying_home(self):
+        (self.home / '.zsh_profile').mkdir()
+        result = self.install(False)
+        self.assertIn('install:', result.stderr)
+        self.assertFalse(self.codex.exists())
+        self.assertFalse((self.home / '.bashrc_local').exists())
+        self.assertFalse((self.home / '.zshrc').exists())
 
     def test_invalid_zdotdir_fails_before_modifying_home(self):
         self.env['ZDOTDIR'] = str(self.home / 'missing')
@@ -624,6 +817,7 @@ exit "${TEST_CODEX_STATUS:-0}"
         self.install()
         self.assertFalse((self.codex / 'scripts/codex-openrouter-shell.zsh').exists())
         self.assertNotIn('codex-openrouter-shell.zsh', (self.home / '.zshrc').read_text())
+        self.assertNotIn('codex-openrouter-shell.zsh', (self.home / '.zsh_profile').read_text())
         self.assertTrue((self.codex / 'models.json').is_file())
 
     @unittest.skipUnless(ZSH, 'requires zsh (or TEST_ZSH)')
