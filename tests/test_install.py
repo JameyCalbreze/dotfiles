@@ -186,10 +186,25 @@ wire_api = "responses"
         self.assertEqual(herdr['keys']['previous_workspace'], ['ctrl+shift+tab', 'prefix+left'])
         self.assertEqual(herdr['keys']['switch_tab'], ['ctrl+1..9', 'prefix+1..9'])
         ghostty = (self.repo / 'ghostty/config').read_text().splitlines()
-        for setting in ('keybind = ctrl+tab=unbind', 'keybind = ctrl+shift+tab=unbind',
-                        'font-family = JetBrainsMono Nerd Font Mono', 'font-size = 16',
-                        'theme = Adwaita Dark', 'keybind = f11=toggle_fullscreen'):
-            self.assertIn(setting, ghostty)
+        for setting in (
+            'keybind = ctrl+tab=unbind', 'keybind = ctrl+shift+tab=unbind',
+            'keybind = f11=toggle_fullscreen', 'font-family = JetBrainsMono Nerd Font',
+            'font-size = 18', 'background = #191d27', 'foreground = #e0e0e0',
+            'selection-background = #273d4c', 'bold-color = #ededed',
+            'background-opacity = 0.95', 'background-blur = true',
+        ):
+            self.assertEqual(ghostty.count(setting), 1)
+        palette = [
+            '#35424c', '#b45648', '#6caa71', '#c4ac62',
+            '#6d96b4', '#bd7bcd', '#7ccbcd', '#dee5eb',
+            '#465c6d', '#df6c5a', '#79be7e', '#e5c872',
+            '#67b5ed', '#d389e5', '#84dde0', '#e5eff5',
+        ]
+        self.assertEqual(
+            [line for line in ghostty if line.startswith('palette = ')],
+            [f'palette = {index}={color}' for index, color in enumerate(palette)],
+        )
+        self.assertFalse(any(line.startswith('theme = ') for line in ghostty))
 
     def test_custom_config_paths_and_backups(self):
         xdg = self.home / 'custom config'

@@ -2,8 +2,30 @@
 keybind = ctrl+tab=unbind
 keybind = ctrl+shift+tab=unbind
 
-# Match the default Ptyxis profile (JetBrains NF and GNOME dark).
-font-family = JetBrainsMono Nerd Font Mono
-font-size = 16
-theme = Adwaita Dark
+# Approximate the macOS Terminal.app "Clear Dark 1" profile on all platforms.
+# Install JetBrainsMono Nerd Font separately; Ghostty falls back if unavailable.
+font-family = JetBrainsMono Nerd Font
+font-size = 18
+background = #191d27
+foreground = #e0e0e0
+selection-background = #273d4c
+bold-color = #ededed
+background-opacity = 0.95
+background-blur = true
+palette = 0=#35424c
+palette = 1=#b45648
+palette = 2=#6caa71
+palette = 3=#c4ac62
+palette = 4=#6d96b4
+palette = 5=#bd7bcd
+palette = 6=#7ccbcd
+palette = 7=#dee5eb
+palette = 8=#465c6d
+palette = 9=#df6c5a
+palette = 10=#79be7e
+palette = 11=#e5c872
+palette = 12=#67b5ed
+palette = 13=#d389e5
+palette = 14=#84dde0
+palette = 15=#e5eff5
 keybind = f11=toggle_fullscreen

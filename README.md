@@ -99,9 +99,12 @@ Ghostty may also read `config.ghostty` in the XDG directory and config files
 under `~/Library/Application Support/com.mitchellh.ghostty` on macOS. Those
 files are not modified; the installer warns when it finds them. macOS-specific
 files are loaded later and may override the shared settings. The shared Ghostty
-config expects the JetBrainsMono Nerd Font Mono font and Adwaita Dark theme to
-be available; this installer does not install them. Restart Ghostty or reload
-its config, and use `herdr server reload-config` for an already-running server.
+config approximates the macOS Terminal.app Clear Dark 1 profile with an embedded
+dark palette, 18-point JetBrainsMono Nerd Font, and a slightly transparent,
+blurred background. Install the font separately; the installer does not install
+fonts, and Ghostty falls back if it is unavailable. Transparency and blur depend
+on platform and compositor support. Restart Ghostty or reload its config, and use
+`herdr server reload-config` for an already-running server.
 
 ## Generic Codex picker
 
