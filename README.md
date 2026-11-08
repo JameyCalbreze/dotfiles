@@ -1,8 +1,7 @@
 # Dotfiles
 
-Portable Codex configuration and a provider-neutral model picker for Bash and
-Zsh, with optional OpenRouter support. Other shell customizations can be added
-later.
+Portable Codex, Herdr, and Ghostty configuration for macOS and Linux, plus a
+provider-neutral model picker for Bash and Zsh with optional OpenRouter support.
 
 ## Install
 
@@ -45,9 +44,12 @@ Start a new shell after installing. Set a custom `CODEX_HOME` before running
 the installer and before the shell loads its startup file. Ensure your Codex
 executable is on `PATH` in each shell.
 
-The shared TOML files are templates, not symlinks. The installer merges their
+The shared Codex TOML files are templates, not symlinks. The installer merges their
 settings into local `config.toml` and `granular.config.toml`, preserving
 unmanaged values such as project trust, additional providers, and hook state.
+Every successful install creates or restores the `granular.config.toml` profile,
+whether or not OpenRouter is included. A preflight failure, including unmanaged
+OpenRouter references in default mode, leaves both configs unchanged.
 The default templates do not choose a model, provider, or model catalog.
 Managed settings removed from the templates are removed on the next install;
 metadata recording managed keys stays in `CODEX_HOME`.
@@ -59,6 +61,31 @@ file is a symlink, the link is backed up and replaced by a local file without
 changing its target. The installer does not edit `~/.bashrc` or install
 packages. On the original machine, `~/.codex` is itself a Git checkout, so
 installing there will appear as changes in that separate checkout.
+
+## Herdr and Ghostty
+
+The installer links the shared Herdr and Ghostty configuration files on both
+macOS and Linux, in addition to the Codex files. By default they are installed
+at `~/.config/herdr/config.toml` and `~/.config/ghostty/config`. When set,
+`XDG_CONFIG_HOME` must be a non-empty absolute path and replaces `~/.config`.
+The installer also honors Herdr's `HERDR_CONFIG_PATH` override; relative paths
+are resolved from the installer's working directory. Use the same environment
+when launching the applications. An empty `HERDR_CONFIG_PATH` is rejected.
+
+These are whole-file symlinks, not merges: existing config files or symlinks
+are backed up before replacement, and settings in them are not retained in the
+active files. Editing a linked file may modify this checkout; an application
+that replaces the file can instead break the link. Re-run the installer to
+restore it, after reviewing any local changes. Herdr sessions, sockets, logs,
+plugins, machine state, and generated hooks remain local and are not linked.
+
+Ghostty may also read `config.ghostty` in the XDG directory and config files
+under `~/Library/Application Support/com.mitchellh.ghostty` on macOS. Those
+files are not modified; the installer warns when it finds them. macOS-specific
+files are loaded later and may override the shared settings. The shared Ghostty
+config expects the JetBrainsMono Nerd Font Mono font and Adwaita Dark theme to
+be available; this installer does not install them. Restart Ghostty or reload
+its config, and use `herdr server reload-config` for an already-running server.
 
 ## Generic Codex picker
 

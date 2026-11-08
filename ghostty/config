@@ -1,0 +1,9 @@
+# Pass these shortcuts to terminal applications such as Herdr.
+keybind = ctrl+tab=unbind
+keybind = ctrl+shift+tab=unbind
+
+# Match the default Ptyxis profile (JetBrains NF and GNOME dark).
+font-family = JetBrainsMono Nerd Font Mono
+font-size = 16
+theme = Adwaita Dark
+keybind = f11=toggle_fullscreen

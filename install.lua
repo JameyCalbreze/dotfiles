@@ -62,6 +62,15 @@ local function is_link(path) return succeeds("test -L " .. quote(path)) end
 local function is_dir(path) return succeeds("test -d " .. quote(path)) end
 local function is_file(path) return succeeds("test -f " .. quote(path)) end
 
+-- Resolve an existing parent directory, including symlinks and dot segments,
+-- without resolving the final component (which may itself be a symlink).
+local function canonical_entry(path)
+  local parent = dirname(path)
+  if not is_dir(parent) then return path end
+  local name = path:match("([^/]+)$")
+  return join(capture("cd " .. quote(parent) .. " && pwd -P"), name)
+end
+
 local function read_file(path)
   local file, err = io.open(path, "rb")
   if not file then error("cannot read " .. path .. ": " .. tostring(err), 0) end
@@ -244,11 +253,16 @@ local function remove_leaf(data, path)
 end
 
 -- Fail closed if unmanaged legacy settings still mention the forbidden provider.
-local function references_openrouter(value)
+local function references_openrouter(value, workspace_roots, codex_home)
   if type(value) == "string" then return value:lower():find("open[_-]?router") ~= nil end
   if type(value) ~= "table" then return false end
   for key, child in pairs(value) do
-    if references_openrouter(key) or references_openrouter(child) then return true end
+    -- This one permission is injected by the installer itself. Its path can
+    -- contain "openrouter" without being a provider configuration reference.
+    if not (value == workspace_roots and key == codex_home) then
+      if references_openrouter(key, workspace_roots, codex_home)
+          or references_openrouter(child, workspace_roots, codex_home) then return true end
+    end
   end
   return false
 end
@@ -314,7 +328,8 @@ local function prepare_configs(codex_home, include_openrouter)
       if not lookup[json.encode(path)] then remove_leaf(merged, path) end
     end
     merge(merged, shared, "")
-    if not include_openrouter and references_openrouter(merged) then
+    local workspace_roots = name == "granular.config.toml" and merged.permissions.granular.workspace_roots or nil
+    if not include_openrouter and references_openrouter(merged, workspace_roots, codex_home) then
       error("OpenRouter references remain in " .. target .. "; review and remove them or use --include-openrouter on an approved machine (existing configuration has not been changed)", 0)
     end
     local text = dump_toml(merged)
@@ -468,7 +483,26 @@ local function main()
   elseif zdotdir:sub(1, 2) == "~/" then zdotdir = join(home, zdotdir:sub(3)) end
   zdotdir = absolute(zdotdir)
   if not is_dir(zdotdir) then error("ZDOTDIR directory does not exist: " .. zdotdir, 0) end
+  local xdg_config = os.getenv("XDG_CONFIG_HOME")
+  if xdg_config == nil then
+    xdg_config = join(home, ".config")
+  elseif xdg_config == "" or xdg_config:sub(1, 1) ~= "/" then
+    -- Herdr and Ghostty do not consistently agree on empty or relative values.
+    error("XDG_CONFIG_HOME must be an absolute, non-empty path when set", 0)
+  end
+  xdg_config = absolute(xdg_config)
+  local herdr_config = os.getenv("HERDR_CONFIG_PATH")
+  if herdr_config == nil then
+    herdr_config = join(xdg_config, "herdr/config.toml")
+  elseif herdr_config == "" then
+    error("HERDR_CONFIG_PATH must not be empty when set", 0)
+  else
+    herdr_config = absolute(herdr_config)
+  end
+  local ghostty_config = join(xdg_config, "ghostty/config")
   local links = {
+    { join(ROOT, "herdr/config.toml"), herdr_config },
+    { join(ROOT, "ghostty/config"), ghostty_config },
     { join(ROOT, "codex/AGENTS.md"), join(codex_home, "AGENTS.md") },
     { join(ROOT, "bash/codex.bash"), join(codex_home, "scripts/codex-shell.bash") },
     { join(ROOT, "zsh/codex.zsh"), join(codex_home, "scripts/codex-shell.zsh") },
@@ -494,12 +528,39 @@ local function main()
     if not is_file(link[1]) then error("missing repository file: " .. link[1], 0) end
     if exists(link[2]) and is_dir(link[2]) and not is_link(link[2]) then error("refusing to replace directory: " .. link[2], 0) end
   end
+  -- Do not let custom config paths overwrite another managed file or a source.
+  local destinations = {}
+  for _, path in ipairs({ join(codex_home, "config.toml"), join(codex_home, "granular.config.toml"),
+                           join(codex_home, STATE_NAME), join(home, ".bashrc_local"),
+                           join(zdotdir, ".zshrc"), join(zdotdir, ".zsh_profile") }) do
+    destinations[canonical_entry(path)] = true
+  end
+  local sources = {}
+  for _, link in ipairs(links) do sources[canonical_entry(link[1])] = true end
+  for _, link in ipairs(optional_links) do sources[canonical_entry(link[1])] = true end
+  for _, name in ipairs({ "config.toml", "granular.config.toml", "openrouter.config.toml" }) do
+    sources[canonical_entry(join(ROOT, "codex/" .. name))] = true
+  end
+  for _, link in ipairs(links) do
+    local target = canonical_entry(link[2])
+    if destinations[target] then error("multiple managed files target " .. link[2], 0) end
+    if sources[target] then error("refusing to replace repository file: " .. link[2], 0) end
+    destinations[target] = true
+  end
   local configs, state_file, state_text = prepare_configs(codex_home, include_openrouter)
   local shell_files = {
     prepare_shell_file(join(home, ".bashrc_local"), SOURCE_LINE, OPTIONAL_SOURCE_LINE, include_openrouter),
     prepare_shell_file(join(zdotdir, ".zsh_profile"), ZSH_SOURCE_LINE, ZSH_OPTIONAL_SOURCE_LINE, include_openrouter),
     prepare_zsh_rc(join(zdotdir, ".zshrc"), home, zdotdir, has_zdotdir),
   }
+  -- Ghostty also reads these files; macOS-specific values override XDG values.
+  for _, path in ipairs({ join(xdg_config, "ghostty/config.ghostty"),
+                           join(home, "Library/Application Support/com.mitchellh.ghostty/config.ghostty"),
+                           join(home, "Library/Application Support/com.mitchellh.ghostty/config") }) do
+    if exists(path) or is_link(path) then
+      io.stderr:write("install: Ghostty may also load " .. path .. "; review it for additional or overriding settings\n")
+    end
+  end
   command("mkdir -p " .. quote(codex_home))
   for _, link in ipairs(links) do install_link(link[1], link[2]) end
   if not include_openrouter then

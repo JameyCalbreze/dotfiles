@@ -1,0 +1,6 @@
+onboarding = false
+
+[keys]
+next_workspace = ["ctrl+tab", "prefix+right"]
+previous_workspace = ["ctrl+shift+tab", "prefix+left"]
+switch_tab = ["ctrl+1..9", "prefix+1..9"]

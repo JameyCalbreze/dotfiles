@@ -25,7 +25,7 @@ class InstallerTests(unittest.TestCase):
         self.base = Path(self.temp.name)
         self.repo = self.base / 'repo with spaces'
         self.repo.mkdir()
-        for name in ('install.lua', 'vendor', 'codex', 'bash', 'zsh'):
+        for name in ('install.lua', 'vendor', 'codex', 'bash', 'zsh', 'herdr', 'ghostty'):
             src, dest = ROOT / name, self.repo / name
             if src.is_dir():
                 shutil.copytree(src, dest, ignore=shutil.ignore_patterns('__pycache__'))
@@ -35,7 +35,7 @@ class InstallerTests(unittest.TestCase):
         self.home.mkdir()
         self.codex = self.home / 'custom codex'
         self.env = dict(os.environ, HOME=str(self.home), CODEX_HOME=str(self.codex))
-        for key in ('OPENAI_BASE_URL', 'OPEN_ROUTER_KEY', 'BEDROCK_API_KEY', 'FOUNDRY_KIMIK_KEY', 'ZDOTDIR'):
+        for key in ('OPENAI_BASE_URL', 'OPEN_ROUTER_KEY', 'BEDROCK_API_KEY', 'FOUNDRY_KIMIK_KEY', 'ZDOTDIR', 'XDG_CONFIG_HOME', 'HERDR_CONFIG_PATH'):
             self.env.pop(key, None)
 
     def install(self, success=True, include_openrouter=False):
@@ -85,6 +85,147 @@ class InstallerTests(unittest.TestCase):
         self.assertEqual((self.codex / 'config.toml').read_text(), config_before)
         self.assertFalse(list(self.home.glob('*.dotfiles-backup.*')))
         self.assertFalse(list(self.codex.glob('*.dotfiles-backup.*')))
+
+    def test_herdr_and_ghostty_default_paths_and_repeat_install(self):
+        self.install()
+        for app, filename in (('herdr', 'config.toml'), ('ghostty', 'config')):
+            target = self.home / '.config' / app / filename
+            self.assertTrue(target.is_symlink())
+            self.assertEqual(target.resolve(), self.repo / app / filename)
+        self.install()
+        self.assertFalse(list((self.home / '.config').rglob('*.dotfiles-backup.*')))
+
+    def test_shared_app_settings(self):
+        herdr = tomllib.loads((self.repo / 'herdr/config.toml').read_text())
+        self.assertFalse(herdr['onboarding'])
+        self.assertEqual(herdr['keys']['next_workspace'], ['ctrl+tab', 'prefix+right'])
+        self.assertEqual(herdr['keys']['previous_workspace'], ['ctrl+shift+tab', 'prefix+left'])
+        self.assertEqual(herdr['keys']['switch_tab'], ['ctrl+1..9', 'prefix+1..9'])
+        ghostty = (self.repo / 'ghostty/config').read_text().splitlines()
+        for setting in ('keybind = ctrl+tab=unbind', 'keybind = ctrl+shift+tab=unbind',
+                        'font-family = JetBrainsMono Nerd Font Mono', 'font-size = 16',
+                        'theme = Adwaita Dark', 'keybind = f11=toggle_fullscreen'):
+            self.assertIn(setting, ghostty)
+
+    def test_custom_config_paths_and_backups(self):
+        xdg = self.home / 'custom config'
+        ghostty = xdg / 'ghostty/config'
+        ghostty.parent.mkdir(parents=True)
+        ghostty.write_text('font-size = 12\n')
+        herdr = self.home / 'custom herdr/config.toml'
+        herdr.parent.mkdir()
+        old = self.home / 'old-herdr.toml'
+        old.write_text('onboarding = true\n')
+        herdr.symlink_to(old)
+        self.env.update(XDG_CONFIG_HOME=str(xdg), HERDR_CONFIG_PATH=str(herdr))
+        self.install()
+        self.assertEqual(ghostty.resolve(), self.repo / 'ghostty/config')
+        self.assertEqual((ghostty.parent / 'config.dotfiles-backup.1').read_text(), 'font-size = 12\n')
+        self.assertEqual(herdr.resolve(), self.repo / 'herdr/config.toml')
+        backup = herdr.parent / 'config.toml.dotfiles-backup.1'
+        self.assertTrue(backup.is_symlink())
+        self.assertEqual(backup.resolve(), old)
+        self.assertEqual(old.read_text(), 'onboarding = true\n')
+        self.install()
+        self.assertFalse((ghostty.parent / 'config.dotfiles-backup.2').exists())
+        self.assertFalse((herdr.parent / 'config.toml.dotfiles-backup.2').exists())
+
+    def test_custom_xdg_without_herdr_override(self):
+        xdg = self.home / 'custom config'
+        self.env['XDG_CONFIG_HOME'] = str(xdg)
+        self.install(include_openrouter=True)
+        self.assertEqual((xdg / 'herdr/config.toml').resolve(), self.repo / 'herdr/config.toml')
+        self.assertEqual((xdg / 'ghostty/config').resolve(), self.repo / 'ghostty/config')
+        self.assertFalse((self.home / '.config/herdr/config.toml').exists())
+
+    def test_invalid_app_paths_and_conflicts_fail_before_changes(self):
+        for key, value, message in (
+            ('XDG_CONFIG_HOME', '', 'XDG_CONFIG_HOME'),
+            ('XDG_CONFIG_HOME', 'relative', 'XDG_CONFIG_HOME'),
+            ('HERDR_CONFIG_PATH', '', 'HERDR_CONFIG_PATH'),
+            ('HERDR_CONFIG_PATH', str(self.home / '.config/ghostty/config'), 'multiple managed files'),
+            ('HERDR_CONFIG_PATH', str(self.codex / 'config.toml'), 'multiple managed files'),
+            ('HERDR_CONFIG_PATH', str(self.home / '.bashrc_local'), 'multiple managed files'),
+            ('HERDR_CONFIG_PATH', str(self.repo / 'herdr/config.toml'), 'refusing to replace repository file'),
+            ('HERDR_CONFIG_PATH', str(self.repo / 'ghostty/config'), 'refusing to replace repository file'),
+            ('HERDR_CONFIG_PATH', str(self.repo / 'herdr') + '/../herdr/config.toml', 'refusing to replace repository file'),
+        ):
+            with self.subTest(key=key, value=value):
+                self.env[key] = value
+                result = self.install(success=False)
+                self.assertIn(message, result.stderr)
+                self.assertFalse(self.codex.exists())
+                self.assertFalse((self.home / '.config').exists())
+                self.env.pop(key)
+        (self.home / '.config/herdr/config.toml').mkdir(parents=True)
+        result = self.install(success=False)
+        self.assertIn('refusing to replace directory', result.stderr)
+        self.assertFalse(self.codex.exists())
+        self.assertFalse((self.home / '.config/ghostty').exists())
+
+    def test_ghostty_other_configs_are_left_alone_and_reported(self):
+        extra = self.home / '.config/ghostty/config.ghostty'
+        mac = self.home / 'Library/Application Support/com.mitchellh.ghostty/config'
+        for path in (extra, mac):
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text('font-size = 20\n')
+        result = self.install()
+        for path in (extra, mac):
+            self.assertIn(str(path), result.stderr)
+            self.assertEqual(path.read_text(), 'font-size = 20\n')
+
+    def test_missing_app_config_fails_before_changes(self):
+        (self.repo / 'ghostty/config').unlink()
+        result = self.install(success=False)
+        self.assertIn('missing repository file', result.stderr)
+        self.assertFalse(self.codex.exists())
+        self.assertFalse((self.home / '.config').exists())
+
+    def test_granular_profile_is_restored_in_both_install_modes(self):
+        shared = tomllib.loads((self.repo / 'codex/granular.config.toml').read_text())
+        for include_openrouter in (False, True):
+            with self.subTest(include_openrouter=include_openrouter):
+                self.codex = self.home / ('with openrouter' if include_openrouter else 'without openrouter')
+                self.env['CODEX_HOME'] = str(self.codex)
+                expected = json.loads(json.dumps(shared))
+                expected['permissions']['granular']['workspace_roots'] = {str(self.codex): True}
+
+                self.install(include_openrouter=include_openrouter)
+                self.assertEqual(self.load('granular.config.toml'), expected)
+                profile = self.codex / 'granular.config.toml'
+                profile.unlink()
+
+                self.install(include_openrouter=include_openrouter)
+                self.assertEqual(self.load('granular.config.toml'), expected)
+
+                original = ('model = "local/model"\n'
+                            '[hooks.state."local-hook"]\n'
+                            'trusted_hash = "sha256:keep"\n')
+                profile.write_text(original)
+                self.install(include_openrouter=include_openrouter)
+                merged = self.load('granular.config.toml')
+                self.assertEqual(merged['model'], 'local/model')
+                self.assertEqual(merged['hooks']['state']['local-hook']['trusted_hash'], 'sha256:keep')
+                for key in ('default_permissions', 'model_reasoning_effort', 'approvals_reviewer', 'auto_review'):
+                    self.assertEqual(merged[key], expected[key])
+                self.assertEqual(merged['permissions'], expected['permissions'])
+                self.assertEqual((self.codex / 'granular.config.toml.dotfiles-backup.1').read_text(), original)
+                self.install(include_openrouter=include_openrouter)
+                self.assertFalse((self.codex / 'granular.config.toml.dotfiles-backup.2').exists())
+
+    def test_openrouter_named_codex_home_does_not_bypass_provider_guard(self):
+        self.codex = self.home / 'openrouter-named codex home'
+        self.env['CODEX_HOME'] = str(self.codex)
+        self.codex.mkdir()
+        profile = self.codex / 'granular.config.toml'
+        original = 'model_provider = "open_router"\n'
+        profile.write_text(original)
+
+        result = self.install(success=False)
+        self.assertIn('OpenRouter references remain', result.stderr)
+        self.assertEqual(profile.read_text(), original)
+        self.assertFalse((self.codex / 'config.toml').exists())
+        self.assertFalse((self.codex / 'AGENTS.md').exists())
 
     @unittest.skipUnless(shutil.which('jq') and shutil.which('bash'), 'requires jq and Bash')
     def test_default_sanitizer_is_manual_and_provider_neutral(self):
