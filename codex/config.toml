@@ -2,12 +2,6 @@ approval_policy = "on-request"
 approvals_reviewer = "user"
 model_reasoning_effort = "medium"
 
-[model_providers.azure_kimik]
-name = "azure/kimik"
-base_url = "https://jameycalbreze-5520-resource.services.ai.azure.com/openai/v1"
-env_key = "FOUNDRY_KIMIK_KEY"
-wire_api = "responses"
-
 [profiles.bedrock_glm]
 model_provider = "aws_bedrock"
 model = "zai.glm-5"

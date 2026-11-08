@@ -86,6 +86,26 @@ class InstallerTests(unittest.TestCase):
         self.assertFalse(list(self.home.glob('*.dotfiles-backup.*')))
         self.assertFalse(list(self.codex.glob('*.dotfiles-backup.*')))
 
+    def test_removed_azure_kimik_provider_is_removed_on_upgrade(self):
+        shared_config = self.repo / 'codex/config.toml'
+        current_config = shared_config.read_text()
+        shared_config.write_text(current_config + '''
+[model_providers.azure_kimik]
+name = "azure/kimik"
+base_url = "https://jameycalbreze-5520-resource.services.ai.azure.com/openai/v1"
+env_key = "FOUNDRY_KIMIK_KEY"
+wire_api = "responses"
+''')
+        self.install()
+        self.assertIn('azure_kimik', self.load('config.toml')['model_providers'])
+
+        shared_config.write_text(current_config)
+        self.install()
+        self.assertNotIn('azure_kimik', self.load('config.toml').get('model_providers', {}))
+        self.assertTrue((self.codex / 'config.toml.dotfiles-backup.1').exists())
+        self.install()
+        self.assertFalse((self.codex / 'config.toml.dotfiles-backup.2').exists())
+
     def test_herdr_and_ghostty_default_paths_and_repeat_install(self):
         self.install()
         for app, filename in (('herdr', 'config.toml'), ('ghostty', 'config')):
