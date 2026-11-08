@@ -56,7 +56,8 @@ class InstallerTests(unittest.TestCase):
         self.assertTrue((self.codex / 'scripts/codex-shell.bash').is_symlink())
         self.assertTrue((self.codex / 'scripts/codex-shell.zsh').is_symlink())
         self.assertTrue((self.codex / 'scripts/pick-codex-model.sh').is_symlink())
-        for name in ('pick-openrouter-model.sh', 'refresh-openrouter-model-catalog.sh', 'strip-model-system-prompts.sh', 'codex-openrouter-shell.bash', 'codex-openrouter-shell.zsh'):
+        self.assertTrue((self.codex / 'scripts/strip-model-system-prompts.sh').is_symlink())
+        for name in ('pick-openrouter-model.sh', 'refresh-openrouter-model-catalog.sh', 'codex-openrouter-shell.bash', 'codex-openrouter-shell.zsh'):
             self.assertFalse((self.codex / 'scripts' / name).exists())
         self.assertFalse((self.codex / 'openrouter-model-families.txt').exists())
         self.assertFalse((self.codex / 'openrouter-model-exceptions.json').exists())
@@ -76,6 +77,29 @@ class InstallerTests(unittest.TestCase):
         self.assertEqual((self.codex / 'config.toml').read_text(), config_before)
         self.assertFalse(list(self.home.glob('*.dotfiles-backup.*')))
         self.assertFalse(list(self.codex.glob('*.dotfiles-backup.*')))
+
+    @unittest.skipUnless(shutil.which('jq') and shutil.which('bash'), 'requires jq and Bash')
+    def test_default_sanitizer_is_manual_and_provider_neutral(self):
+        self.codex.mkdir()
+        catalog = self.codex / 'models.json'
+        original = {'models': [
+            {'slug': 'work/model', 'base_instructions': 'first prompt', 'other': 1},
+            {'slug': 'another', 'base_instructions': 'second prompt', 'other': 2},
+        ], 'unrelated': True}
+        catalog.write_text(json.dumps(original))
+        self.install()
+        self.assertEqual(json.loads(catalog.read_text()), original, 'installer must not sanitize automatically')
+        sanitizer = self.codex / 'scripts/strip-model-system-prompts.sh'
+        self.assertTrue(sanitizer.is_symlink())
+        result = subprocess.run([str(sanitizer)], env=self.env, cwd=self.home,
+                                text=True, capture_output=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        sanitized = json.loads(catalog.read_text())
+        self.assertEqual([model['base_instructions'] for model in sanitized['models']], ['', ''])
+        self.assertEqual([model['slug'] for model in sanitized['models']], ['work/model', 'another'])
+        self.assertEqual([model['other'] for model in sanitized['models']], [1, 2])
+        self.assertTrue(sanitized['unrelated'])
+        self.assertFalse((self.codex / 'scripts/pick-openrouter-model.sh').exists())
 
     def test_default_shell_does_not_install_openrouter_functions_or_load_key(self):
         self.install()
@@ -98,7 +122,7 @@ class InstallerTests(unittest.TestCase):
     def test_include_openrouter_installs_all_optional_files_and_config(self):
         self.install(include_openrouter=True)
         for name in ('pick-openrouter-model.sh', 'refresh-openrouter-model-catalog.sh',
-                     'strip-model-system-prompts.sh', 'codex-openrouter-shell.bash', 'codex-openrouter-shell.zsh'):
+                     'codex-openrouter-shell.bash', 'codex-openrouter-shell.zsh'):
             self.assertTrue((self.codex / 'scripts' / name).is_symlink(), name)
         for name in ('openrouter-model-families.txt', 'openrouter-model-exceptions.json'):
             self.assertTrue((self.codex / name).is_symlink(), name)
@@ -123,7 +147,7 @@ class InstallerTests(unittest.TestCase):
         catalog.write_text('{"models": []}\n')
         self.install()
         for name in ('pick-openrouter-model.sh', 'refresh-openrouter-model-catalog.sh',
-                     'strip-model-system-prompts.sh', 'codex-openrouter-shell.bash', 'codex-openrouter-shell.zsh'):
+                     'codex-openrouter-shell.bash', 'codex-openrouter-shell.zsh'):
             self.assertFalse((self.codex / 'scripts' / name).exists(), name)
         for name in ('openrouter-model-families.txt', 'openrouter-model-exceptions.json'):
             self.assertFalse((self.codex / name).exists(), name)
@@ -135,6 +159,7 @@ class InstallerTests(unittest.TestCase):
         self.assertNotIn('codex-openrouter-shell.bash', (self.home / '.bashrc_local').read_text())
         self.assertNotIn('codex-openrouter-shell.zsh', (self.home / '.zshrc').read_text())
         self.assertTrue(catalog.is_file(), 'generated local catalog must not be deleted')
+        self.assertTrue((self.codex / 'scripts/strip-model-system-prompts.sh').is_symlink())
         self.assertTrue((self.codex / 'config.toml.dotfiles-backup.1').exists())
         self.install()
         self.assertFalse((self.codex / 'config.toml.dotfiles-backup.2').exists())

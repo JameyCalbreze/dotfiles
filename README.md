@@ -77,6 +77,25 @@ Codex connections are not supported by this picker. Use `codex pick --
 Codex configuration selects OpenRouter, the generic picker uses that configured
 provider; the installer does not override unmanaged settings.
 
+## Sanitize a local model catalog
+
+The default installation also makes the catalog sanitizer available:
+
+```bash
+"${CODEX_HOME:-$HOME/.codex}/scripts/strip-model-system-prompts.sh"
+"${CODEX_HOME:-$HOME/.codex}/scripts/strip-model-system-prompts.sh" --target /path/to/models.json
+```
+
+It clears the `base_instructions` string on every model in the specified local
+catalog; without `--target`, it uses `$CODEX_HOME/models.json` (or
+`~/.codex/models.json`). The file is replaced atomically and its permissions
+are preserved, but **no backup is created**. It fails without changing the file
+if any model lacks a string `base_instructions`. It requires `jq` and `stat`.
+
+The installer and generic picker do not run the sanitizer automatically. It
+changes only the local file, not the provider's models or server-side prompts;
+Codex must be configured to use that catalog for it to affect a session.
+
 ## Optional OpenRouter installation
 
 Only on an approved machine, explicitly include OpenRouter:
@@ -86,7 +105,8 @@ lua install.lua --include-openrouter
 ```
 
 This adds the OpenRouter provider and profile, plus the optional OpenRouter
-picker, catalog refresh and sanitization scripts, and catalog inputs. It does
+picker, catalog refresh script, and catalog inputs. The refresh uses the shared
+sanitizer automatically. It does
 **not** change the default provider or model: ordinary `codex` and `codex pick`
 continue to use the configured provider. Existing unmanaged settings are
 preserved, so review them separately. Reinstalling after an earlier version of

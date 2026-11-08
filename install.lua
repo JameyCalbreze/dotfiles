@@ -404,6 +404,7 @@ local function main()
     { join(ROOT, "bash/codex.bash"), join(codex_home, "scripts/codex-shell.bash") },
     { join(ROOT, "zsh/codex.zsh"), join(codex_home, "scripts/codex-shell.zsh") },
     { join(ROOT, "codex/scripts/pick-codex-model.sh"), join(codex_home, "scripts/pick-codex-model.sh") },
+    { join(ROOT, "codex/scripts/strip-model-system-prompts.sh"), join(codex_home, "scripts/strip-model-system-prompts.sh") },
     { join(ROOT, "codex/scripts/codex-profile-config.lua"), join(codex_home, "scripts/codex-profile-config.lua") },
     { join(ROOT, "vendor/tinytoml.lua"), join(codex_home, "scripts/codex-toml.lua") },
   }
@@ -414,7 +415,7 @@ local function main()
   for _, name in ipairs({ "openrouter-model-families.txt", "openrouter-model-exceptions.json" }) do
     optional_links[#optional_links + 1] = { join(ROOT, "codex/" .. name), join(codex_home, name) }
   end
-  for _, name in ipairs({ "pick-openrouter-model.sh", "refresh-openrouter-model-catalog.sh", "strip-model-system-prompts.sh" }) do
+  for _, name in ipairs({ "pick-openrouter-model.sh", "refresh-openrouter-model-catalog.sh" }) do
     optional_links[#optional_links + 1] = { join(ROOT, "codex/scripts/" .. name), join(codex_home, "scripts/" .. name) }
   end
   if include_openrouter then
