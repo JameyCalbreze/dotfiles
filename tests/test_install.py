@@ -12,6 +12,7 @@ import tomllib
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
+ZSH = os.environ.get('TEST_ZSH') or shutil.which('zsh')
 
 
 class InstallerTests(unittest.TestCase):
@@ -21,7 +22,7 @@ class InstallerTests(unittest.TestCase):
         self.base = Path(self.temp.name)
         self.repo = self.base / 'repo with spaces'
         self.repo.mkdir()
-        for name in ('install.lua', 'vendor', 'codex', 'bash'):
+        for name in ('install.lua', 'vendor', 'codex', 'bash', 'zsh'):
             src, dest = ROOT / name, self.repo / name
             if src.is_dir():
                 shutil.copytree(src, dest, ignore=shutil.ignore_patterns('__pycache__'))
@@ -31,7 +32,7 @@ class InstallerTests(unittest.TestCase):
         self.home.mkdir()
         self.codex = self.home / 'custom codex'
         self.env = dict(os.environ, HOME=str(self.home), CODEX_HOME=str(self.codex))
-        for key in ('OPENAI_BASE_URL', 'OPEN_ROUTER_KEY'):
+        for key in ('OPENAI_BASE_URL', 'OPEN_ROUTER_KEY', 'BEDROCK_API_KEY', 'FOUNDRY_KIMIK_KEY', 'ZDOTDIR'):
             self.env.pop(key, None)
 
     def install(self, success=True, include_openrouter=False):
@@ -53,20 +54,24 @@ class InstallerTests(unittest.TestCase):
         self.install()
         self.assertEqual((self.codex / 'AGENTS.md').resolve(), self.repo / 'codex/AGENTS.md')
         self.assertTrue((self.codex / 'scripts/codex-shell.bash').is_symlink())
-        for name in ('pick-codex-model.sh', 'refresh-openrouter-model-catalog.sh', 'strip-model-system-prompts.sh', 'codex-openrouter-shell.bash'):
+        self.assertTrue((self.codex / 'scripts/codex-shell.zsh').is_symlink())
+        for name in ('pick-codex-model.sh', 'refresh-openrouter-model-catalog.sh', 'strip-model-system-prompts.sh', 'codex-openrouter-shell.bash', 'codex-openrouter-shell.zsh'):
             self.assertFalse((self.codex / 'scripts' / name).exists())
         self.assertFalse((self.codex / 'openrouter-model-families.txt').exists())
         self.assertFalse((self.codex / 'openrouter-model-exceptions.json').exists())
         self.assertNotIn('openrouter', (self.home / '.bashrc_local').read_text())
+        self.assertNotIn('openrouter', (self.home / '.zshrc').read_text())
         self.assertFalse((self.codex / 'models.json').exists())
         self.assertNotIn('model_catalog_json', self.load('config.toml'))
         profile = self.load('granular.config.toml')
         self.assertTrue(profile['permissions']['granular']['workspace_roots'][str(self.codex)])
         self.assertEqual(profile['permissions']['granular']['filesystem'][':workspace_roots']['.'], 'read')
         shell_before = (self.home / '.bashrc_local').read_text()
+        zsh_before = (self.home / '.zshrc').read_text()
         config_before = (self.codex / 'config.toml').read_text()
         self.install()
         self.assertEqual((self.home / '.bashrc_local').read_text(), shell_before)
+        self.assertEqual((self.home / '.zshrc').read_text(), zsh_before)
         self.assertEqual((self.codex / 'config.toml').read_text(), config_before)
         self.assertFalse(list(self.home.glob('*.dotfiles-backup.*')))
         self.assertFalse(list(self.codex.glob('*.dotfiles-backup.*')))
@@ -92,7 +97,7 @@ class InstallerTests(unittest.TestCase):
     def test_include_openrouter_installs_all_optional_files_and_config(self):
         self.install(include_openrouter=True)
         for name in ('pick-codex-model.sh', 'refresh-openrouter-model-catalog.sh',
-                     'strip-model-system-prompts.sh', 'codex-openrouter-shell.bash'):
+                     'strip-model-system-prompts.sh', 'codex-openrouter-shell.bash', 'codex-openrouter-shell.zsh'):
             self.assertTrue((self.codex / 'scripts' / name).is_symlink(), name)
         for name in ('openrouter-model-families.txt', 'openrouter-model-exceptions.json'):
             self.assertTrue((self.codex / name).is_symlink(), name)
@@ -105,8 +110,11 @@ class InstallerTests(unittest.TestCase):
         self.assertEqual(self.load('granular.config.toml')['model'], 'deepseek/deepseek-v4.1-flash')
         shell = (self.home / '.bashrc_local').read_text()
         self.assertEqual(shell.count('source "${CODEX_HOME:-$HOME/.codex}/scripts/codex-openrouter-shell.bash"'), 1)
+        zshrc = (self.home / '.zshrc').read_text()
+        self.assertEqual(zshrc.count('source "${CODEX_HOME:-$HOME/.codex}/scripts/codex-openrouter-shell.zsh"'), 1)
         self.install(include_openrouter=True)
         self.assertEqual((self.home / '.bashrc_local').read_text(), shell)
+        self.assertEqual((self.home / '.zshrc').read_text(), zshrc)
         self.assertFalse((self.codex / 'config.toml.dotfiles-backup.1').exists())
 
     def test_default_after_opt_in_removes_only_managed_optional_installation(self):
@@ -115,7 +123,7 @@ class InstallerTests(unittest.TestCase):
         catalog.write_text('{"models": []}\n')
         self.install()
         for name in ('pick-codex-model.sh', 'refresh-openrouter-model-catalog.sh',
-                     'strip-model-system-prompts.sh', 'codex-openrouter-shell.bash'):
+                     'strip-model-system-prompts.sh', 'codex-openrouter-shell.bash', 'codex-openrouter-shell.zsh'):
             self.assertFalse((self.codex / 'scripts' / name).exists(), name)
         for name in ('openrouter-model-families.txt', 'openrouter-model-exceptions.json'):
             self.assertFalse((self.codex / name).exists(), name)
@@ -125,6 +133,7 @@ class InstallerTests(unittest.TestCase):
         self.assertNotIn('openrouter_glm', base.get('profiles', {}))
         self.assertNotIn('model', self.load('granular.config.toml'))
         self.assertNotIn('codex-openrouter-shell.bash', (self.home / '.bashrc_local').read_text())
+        self.assertNotIn('codex-openrouter-shell.zsh', (self.home / '.zshrc').read_text())
         self.assertTrue(catalog.is_file(), 'generated local catalog must not be deleted')
         self.assertTrue((self.codex / 'config.toml.dotfiles-backup.1').exists())
         self.install()
@@ -172,10 +181,65 @@ class InstallerTests(unittest.TestCase):
             self.assertFalse(self.codex.exists())
             self.assertFalse((self.home / '.bashrc_local').exists())
 
+    def test_custom_zdotdir_and_private_zshrc_are_preserved(self):
+        zdotdir = self.home / 'zsh config with spaces'
+        zdotdir.mkdir()
+        rc = zdotdir / '.zshrc'
+        rc.write_text('alias n=nano\n')
+        rc.chmod(0o600)
+        self.env['ZDOTDIR'] = str(zdotdir)
+        self.install()
+        self.assertTrue(rc.read_text().startswith('alias n=nano\n'))
+        self.assertIn('codex-shell.zsh', rc.read_text())
+        self.assertEqual(rc.stat().st_mode & 0o777, 0o600)
+        self.assertEqual((zdotdir / '.zshrc.dotfiles-backup.1').read_text(), 'alias n=nano\n')
+        self.assertFalse((self.home / '.zshrc').exists())
+        if ZSH:
+            result = subprocess.run([ZSH, '-i', '-c', 'whence -w codex'], env=self.env,
+                                    cwd=self.home, text=True, capture_output=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn('codex: function', result.stdout)
+        previous = rc.read_text()
+        self.install()
+        self.assertEqual(rc.read_text(), previous)
+        self.assertFalse((zdotdir / '.zshrc.dotfiles-backup.2').exists())
+        self.install(include_openrouter=True)
+        self.assertIn('codex-openrouter-shell.zsh', rc.read_text())
+        if ZSH:
+            result = subprocess.run([ZSH, '-i', '-c', 'whence -w codex-openrouter-models'], env=self.env,
+                                    cwd=self.home, text=True, capture_output=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn('codex-openrouter-models: function', result.stdout)
+        self.install()
+        self.assertNotIn('codex-openrouter-shell.zsh', rc.read_text())
+        self.assertIn('alias n=nano', rc.read_text())
+        self.assertEqual(rc.stat().st_mode & 0o777, 0o600)
+
+    def test_invalid_zdotdir_fails_before_modifying_home(self):
+        self.env['ZDOTDIR'] = str(self.home / 'missing')
+        result = self.install(False)
+        self.assertIn('ZDOTDIR directory does not exist', result.stderr)
+        self.assertFalse(self.codex.exists())
+        self.assertFalse((self.home / '.bashrc_local').exists())
+        self.assertFalse((self.home / '.zshrc').exists())
+
+    def test_zshrc_symlink_is_backed_up_without_changing_its_target(self):
+        original = self.home / 'original-zshrc'
+        original.write_text('alias n=nano\n')
+        original.chmod(0o600)
+        (self.home / '.zshrc').symlink_to(original)
+        self.install()
+        self.assertEqual(original.read_text(), 'alias n=nano\n')
+        self.assertTrue((self.home / '.zshrc.dotfiles-backup.1').is_symlink())
+        self.assertEqual((self.home / '.zshrc.dotfiles-backup.1').resolve(), original)
+        self.assertFalse((self.home / '.zshrc').is_symlink())
+        self.assertEqual((self.home / '.zshrc').stat().st_mode & 0o777, 0o600)
+
     def test_existing_files_preserved_backed_up_and_merged(self):
         self.codex.mkdir()
         (self.codex / 'AGENTS.md').write_text('old instructions\n')
         (self.home / '.bashrc_local').write_text('alias n=nano\n')
+        (self.home / '.bashrc_local').chmod(0o600)
         (self.codex / 'config.toml').write_text('''# keep this backup
 model = "local old"
 model_provider = "local old"
@@ -212,6 +276,7 @@ trusted_hash = "sha256:keep"
         self.assertEqual((self.home / '.bashrc_local.dotfiles-backup.1').read_text(), 'alias n=nano\n')
         self.assertIn('# keep this backup', (self.codex / 'config.toml.dotfiles-backup.1').read_text())
         self.assertIn('alias n=nano', (self.home / '.bashrc_local').read_text())
+        self.assertEqual((self.home / '.bashrc_local').stat().st_mode & 0o777, 0o600)
         self.install()
         self.assertFalse((self.codex / 'config.toml.dotfiles-backup.2').exists())
         self.assertFalse((self.home / '.bashrc_local.dotfiles-backup.2').exists())
@@ -416,6 +481,105 @@ trust_level = "trusted"
         self.assertIn('--profile', args)
         self.assertIn('granular', args)
         self.assertFalse((self.repo / 'codex/models.json').exists())
+
+    @unittest.skipUnless(ZSH, 'requires zsh (or TEST_ZSH)')
+    def test_zsh_default_startup_routes_codex_and_keeps_credentials_local(self):
+        rc = self.home / '.zshrc'
+        rc.write_text("alias codex='echo wrong-alias'\n")
+        secrets = self.home / '.secrets'
+        secrets.mkdir()
+        (secrets / 'bedrock').write_text('fake-bedrock')
+        (secrets / 'kimik.foundry').write_text('fake-foundry')
+        (secrets / 'openrouter').write_text('must-not-load')
+        bin_dir = self.base / 'zsh bin'
+        bin_dir.mkdir()
+        codex = bin_dir / 'codex'
+        codex.write_text('''#!/bin/sh
+printf "%s\\n" "$@" > "$TEST_ARGV"
+printf "%s|%s|%s|%s" "${EDITOR-}" "${BEDROCK_API_KEY-}" "${FOUNDRY_KIMIK_KEY-}" "${OPEN_ROUTER_KEY-}" > "$TEST_ENV"
+exit "${TEST_CODEX_STATUS:-0}"
+''')
+        codex.chmod(0o755)
+        self.install()
+        env = dict(self.env, ZDOTDIR=str(self.home), PATH=str(bin_dir) + os.pathsep + self.env['PATH'],
+                   TEST_ARGV=str(self.base / 'args'), TEST_ENV=str(self.base / 'env'))
+        command = ('codex exec "a prompt with spaces"; '
+                   'print -r -- "local:${BEDROCK_API_KEY-unset}:${FOUNDRY_KIMIK_KEY-unset}:${OPEN_ROUTER_KEY-unset}"; '
+                   'case "$(whence -w codex-openrouter-models)" in *": function") exit 98;; esac; exit 0')
+        result = subprocess.run([ZSH, '-i', '-c', command], env=env, cwd=self.home, text=True, capture_output=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual((self.base / 'args').read_text().splitlines(), ['--profile', 'granular', 'exec', 'a prompt with spaces'])
+        self.assertEqual((self.base / 'env').read_text(), 'micro|fake-bedrock|fake-foundry|')
+        self.assertIn('local:unset:unset:unset', result.stdout)
+        env['BEDROCK_API_KEY'] = 'from-environment'
+        result = subprocess.run([ZSH, '-i', '-c', 'codex --help'], env=env, cwd=self.home, text=True, capture_output=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual((self.base / 'env').read_text(), 'micro|from-environment|fake-foundry|')
+        env['TEST_CODEX_STATUS'] = '37'
+        result = subprocess.run([ZSH, '-i', '-c', 'codex --help'], env=env, cwd=self.home, text=True, capture_output=True)
+        self.assertEqual(result.returncode, 37, result.stderr)
+        env.pop('TEST_CODEX_STATUS')
+        env.pop('BEDROCK_API_KEY')
+        (secrets / 'bedrock').unlink()
+        (secrets / 'kimik.foundry').unlink()
+        result = subprocess.run([ZSH, '-i', '-c', 'codex --help'], env=env, cwd=self.home, text=True, capture_output=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual((self.base / 'env').read_text(), 'micro|||')
+
+    @unittest.skipUnless(ZSH and shutil.which('jq') and shutil.which('bash'), 'requires zsh, jq and Bash')
+    def test_zsh_openrouter_opt_in_picker_and_refresh_with_stubs(self):
+        (self.home / '.zshrc').write_text("alias codex='echo wrong-alias'\nalias codex-openrouter-models='echo wrong-refresh'\n")
+        secrets = self.home / '.secrets'
+        secrets.mkdir()
+        (secrets / 'openrouter').write_text('fake-router')
+        (secrets / 'bedrock').write_text('fake-bedrock')
+        (secrets / 'kimik.foundry').write_text('fake-foundry')
+        bin_dir = self.base / 'zsh tools'
+        bin_dir.mkdir()
+        scripts = {
+            'codex': '#!/bin/sh\nprintf "%s\\n" "$@" > "$TEST_ARGV"\nprintf "%s|%s|%s|%s" "${EDITOR-}" "${BEDROCK_API_KEY-}" "${FOUNDRY_KIMIK_KEY-}" "${OPEN_ROUTER_KEY-}" > "$TEST_ENV"\n',
+            'curl': '#!/bin/sh\ncat "$TEST_FIXTURE"\n',
+            'fzf': "#!/bin/sh\nawk 'NR==1 {print}'\n",
+        }
+        for name, content in scripts.items():
+            path = bin_dir / name
+            path.write_text(content)
+            path.chmod(0o755)
+        self.install(include_openrouter=True)
+        env = dict(self.env, ZDOTDIR=str(self.home), PATH=str(bin_dir) + os.pathsep + self.env['PATH'],
+                   TEST_ARGV=str(self.base / 'args'), TEST_ENV=str(self.base / 'env'),
+                   TEST_FIXTURE=str(self.repo / 'codex/tests/fixtures/openrouter-models.json'),
+                   TEST_PROJECT=str(self.home), TEST_PROMPT='prompt with spaces')
+        result = subprocess.run([ZSH, '-i', '-c', 'codex-openrouter-models'], env=env, cwd=self.home, text=True, capture_output=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue((self.codex / 'models.json').is_file())
+        command = 'codex pick -C "$TEST_PROJECT" "$TEST_PROMPT"; print -r -- "local:${OPEN_ROUTER_KEY-unset}"'
+        result = subprocess.run([ZSH, '-i', '-c', command], env=env, cwd=self.home, text=True, capture_output=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        args = (self.base / 'args').read_text().splitlines()
+        self.assertEqual(args[:2], ['--model', 'anthropic/claude-test'])
+        self.assertIn('model_provider="open_router"', args)
+        self.assertEqual(args[-5:], ['--profile', 'granular', '-C', str(self.home), 'prompt with spaces'])
+        self.assertEqual((self.base / 'env').read_text(), 'micro|fake-bedrock|fake-foundry|fake-router')
+        self.assertIn('local:unset', result.stdout)
+        env['OPEN_ROUTER_KEY'] = 'from-environment'
+        result = subprocess.run([ZSH, '-i', '-c', 'codex --help'], env=env, cwd=self.home, text=True, capture_output=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual((self.base / 'env').read_text(), 'micro|fake-bedrock|fake-foundry|from-environment')
+        self.install()
+        self.assertFalse((self.codex / 'scripts/codex-openrouter-shell.zsh').exists())
+        self.assertNotIn('codex-openrouter-shell.zsh', (self.home / '.zshrc').read_text())
+        self.assertTrue((self.codex / 'models.json').is_file())
+
+    @unittest.skipUnless(ZSH, 'requires zsh (or TEST_ZSH)')
+    def test_zsh_missing_codex_executable_reports_error(self):
+        self.install()
+        empty_path = self.base / 'empty-path'
+        empty_path.mkdir()
+        env = dict(self.env, ZDOTDIR=str(self.home), PATH=str(empty_path))
+        result = subprocess.run([ZSH, '-i', '-c', 'codex --help'], env=env, cwd=self.home, text=True, capture_output=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('executable not found in PATH', result.stderr)
 
     def test_installer_does_not_invoke_python(self):
         bin_dir = self.base / 'no python bin'

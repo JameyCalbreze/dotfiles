@@ -84,7 +84,10 @@ done
 [[ -n ${OPEN_ROUTER_KEY:-} ]] || { echo "OPEN_ROUTER_KEY must be set" >&2; exit 1; }
 [[ -f "$families_file" ]] || { echo "family configuration not found: $families_file" >&2; exit 1; }
 
-mapfile -t families < <(sed -E 's/[[:space:]]*#.*$//; /^[[:space:]]*$/d; s/^[[:space:]]+//; s/[[:space:]]+$//' "$families_file")
+families=()
+while IFS= read -r family || [[ -n ${family:-} ]]; do
+  families[${#families[@]}]=$family
+done < <(sed -E 's/[[:space:]]*#.*$//; /^[[:space:]]*$/d; s/^[[:space:]]+//; s/[[:space:]]+$//' "$families_file")
 ((${#families[@]})) || { echo "family configuration is empty: $families_file" >&2; exit 1; }
 
 exceptions_json='{"exceptions":[]}'

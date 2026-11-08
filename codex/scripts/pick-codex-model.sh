@@ -18,7 +18,7 @@ Options:
   --codex-bin PATH  Codex executable (default: $CODEX_BIN or codex on PATH).
   -h, --help        Show this help text.
 
-In Bash, use: codex pick [-C DIRECTORY] [PROMPT]
+In Bash or Zsh, use: codex pick [-C DIRECTORY] [PROMPT]
 Typing searches; arrows navigate; Enter selects; Escape/Ctrl-C cancels.
 Only supported efforts are shown, with the default selected first. Models
 with one supported effort skip the effort screen. Model, effort, provider,
@@ -46,7 +46,6 @@ while (($#)); do
     *) argument_error "unknown launcher argument: $1 (put Codex arguments after --)" ;;
   esac
 done
-codex_args=("$@")
 
 check_assignment() {
   local key=${1%%=*}
@@ -106,7 +105,7 @@ check_codex_args() {
     esac
   done
 }
-check_codex_args "${codex_args[@]}"
+check_codex_args "$@"
 
 for dependency in jq fzf; do
   command -v "$dependency" >/dev/null || die "$dependency is required; install it and retry"
@@ -223,4 +222,4 @@ exec "$codex_bin" --model "$slug" \
   -c "model_reasoning_effort=$effort_value" \
   -c "model_provider=\"$provider\"" \
   -c "model_catalog_json=$catalog_value" \
-  "${routing_args[@]}" "${codex_args[@]}"
+  "${routing_args[@]}" "$@"

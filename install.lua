@@ -52,6 +52,8 @@ local array_mt = toml.array_mt
 local date_mt = { __toml_date = true }
 local SOURCE_LINE = '[[ -f "${CODEX_HOME:-$HOME/.codex}/scripts/codex-shell.bash" ]] && source "${CODEX_HOME:-$HOME/.codex}/scripts/codex-shell.bash"'
 local OPTIONAL_SOURCE_LINE = '[[ -f "${CODEX_HOME:-$HOME/.codex}/scripts/codex-openrouter-shell.bash" ]] && source "${CODEX_HOME:-$HOME/.codex}/scripts/codex-openrouter-shell.bash"'
+local ZSH_SOURCE_LINE = '[[ -f "${CODEX_HOME:-$HOME/.codex}/scripts/codex-shell.zsh" ]] && source "${CODEX_HOME:-$HOME/.codex}/scripts/codex-shell.zsh"'
+local ZSH_OPTIONAL_SOURCE_LINE = '[[ -f "${CODEX_HOME:-$HOME/.codex}/scripts/codex-openrouter-shell.zsh" ]] && source "${CODEX_HOME:-$HOME/.codex}/scripts/codex-openrouter-shell.zsh"'
 local STATE_NAME = ".dotfiles-managed-config.json"
 
 local function exists(path) return succeeds("test -e " .. quote(path)) end
@@ -361,6 +363,23 @@ local function append_source_line(text, source_line)
   return text .. source_line .. "\n"
 end
 
+local function prepare_shell_file(path, common_line, optional_line, include_openrouter)
+  local original = exists(path) and read_file(path) or ""
+  local text = remove_source_line(original, optional_line)
+  local has_common = false
+  for line in (text .. "\n"):gmatch("(.-)\n") do
+    if line == common_line then has_common = true; break end
+  end
+  if not has_common then text = append_source_line(text, common_line) end
+  if include_openrouter then text = append_source_line(text, optional_line) end
+  local mode = "644"
+  if exists(path) then
+    mode = capture("stat -L -c '%a' " .. quote(path) .. " 2>/dev/null || stat -L -f '%Lp' " .. quote(path) .. " 2>/dev/null")
+    if not mode:match("^[0-7]+$") or #mode > 4 then error("invalid file mode for " .. path, 0) end
+  end
+  return { path = path, text = text, changed = text ~= original, mode = mode }
+end
+
 local function main()
   local include_openrouter = #arg == 1 and arg[1] == "--include-openrouter"
   if #arg == 1 and (arg[1] == "--help" or arg[1] == "-h") then
@@ -376,12 +395,20 @@ local function main()
   if codex_home == "~" then codex_home = home
   elseif codex_home:sub(1, 2) == "~/" then codex_home = join(home, codex_home:sub(3)) end
   codex_home = absolute(codex_home)
+  local zdotdir = os.getenv("ZDOTDIR")
+  if not zdotdir or zdotdir == "" then zdotdir = home end
+  if zdotdir == "~" then zdotdir = home
+  elseif zdotdir:sub(1, 2) == "~/" then zdotdir = join(home, zdotdir:sub(3)) end
+  zdotdir = absolute(zdotdir)
+  if not is_dir(zdotdir) then error("ZDOTDIR directory does not exist: " .. zdotdir, 0) end
   local links = {
     { join(ROOT, "codex/AGENTS.md"), join(codex_home, "AGENTS.md") },
     { join(ROOT, "bash/codex.bash"), join(codex_home, "scripts/codex-shell.bash") },
+    { join(ROOT, "zsh/codex.zsh"), join(codex_home, "scripts/codex-shell.zsh") },
   }
   local optional_links = {
     { join(ROOT, "bash/codex-openrouter.bash"), join(codex_home, "scripts/codex-openrouter-shell.bash") },
+    { join(ROOT, "zsh/codex-openrouter.zsh"), join(codex_home, "scripts/codex-openrouter-shell.zsh") },
   }
   for _, name in ipairs({ "openrouter-model-families.txt", "openrouter-model-exceptions.json" }) do
     optional_links[#optional_links + 1] = { join(ROOT, "codex/" .. name), join(codex_home, name) }
@@ -397,16 +424,10 @@ local function main()
     if exists(link[2]) and is_dir(link[2]) and not is_link(link[2]) then error("refusing to replace directory: " .. link[2], 0) end
   end
   local configs, state_file, state_text = prepare_configs(codex_home, include_openrouter)
-  local bashrc = join(home, ".bashrc_local")
-  local original_shell_text = exists(bashrc) and read_file(bashrc) or ""
-  local shell_text = remove_source_line(original_shell_text, OPTIONAL_SOURCE_LINE)
-  local has_common = false
-  for line in (shell_text .. "\n"):gmatch("(.-)\n") do
-    if line == SOURCE_LINE then has_common = true; break end
-  end
-  if not has_common then shell_text = append_source_line(shell_text, SOURCE_LINE) end
-  if include_openrouter then shell_text = append_source_line(shell_text, OPTIONAL_SOURCE_LINE) end
-  local shell_change = shell_text ~= original_shell_text
+  local shell_files = {
+    prepare_shell_file(join(home, ".bashrc_local"), SOURCE_LINE, OPTIONAL_SOURCE_LINE, include_openrouter),
+    prepare_shell_file(join(zdotdir, ".zshrc"), ZSH_SOURCE_LINE, ZSH_OPTIONAL_SOURCE_LINE, include_openrouter),
+  }
   command("mkdir -p " .. quote(codex_home))
   for _, link in ipairs(links) do install_link(link[1], link[2]) end
   if not include_openrouter then
@@ -429,15 +450,17 @@ local function main()
     end
   end
   if not exists(state_file) or read_file(state_file) ~= state_text then atomic_write(state_file, state_text, "600") end
-  if shell_change then
-    if exists(bashrc) or is_link(bashrc) then backup(bashrc) end
-    atomic_write(bashrc, shell_text, "644")
-    print("Updated " .. bashrc)
+  for _, shell_file in ipairs(shell_files) do
+    if shell_file.changed then
+      if exists(shell_file.path) or is_link(shell_file.path) then backup(shell_file.path) end
+      atomic_write(shell_file.path, shell_file.text, shell_file.mode)
+      print("Updated " .. shell_file.path)
+    end
   end
   if include_openrouter then
-    print("Done. OpenRouter integration installed. Ensure ~/.bashrc sources ~/.bashrc_local.")
+    print("Done. OpenRouter integration installed. Restart Zsh or ensure ~/.bashrc sources ~/.bashrc_local.")
   else
-    print("Done. OpenRouter integration omitted. Ensure ~/.bashrc sources ~/.bashrc_local.")
+    print("Done. OpenRouter integration omitted. Restart Zsh or ensure ~/.bashrc sources ~/.bashrc_local.")
   end
 end
 

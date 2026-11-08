@@ -44,6 +44,20 @@ cat >"$work/catalog/models.json" <<'EOF'
 {"models":[{"base_instructions":"do not retain this","slug":"old"}]}
 EOF
 
+# A valid last family without a trailing newline must still be included.
+printf 'openai/' >"$work/no-newline-families.txt"
+PATH="$work/bin:$PATH" OPEN_ROUTER_KEY=test-key "$REFRESH" \
+  --exceptions "$work/no-exceptions.json" --families "$work/no-newline-families.txt" \
+  --target "$work/catalog/no-newline.json" --endpoint regular-fixture >/dev/null
+assert_jq '.models | length == 1 and .[0].slug == "openai/gpt-test"' "$work/catalog/no-newline.json"
+printf '# comment only\n\n' >"$work/empty-families.txt"
+if PATH="$work/bin:$PATH" OPEN_ROUTER_KEY=test-key "$REFRESH" \
+  --exceptions "$work/no-exceptions.json" --families "$work/empty-families.txt" \
+  --target "$work/catalog/empty.json" --endpoint regular-fixture >/dev/null 2>&1; then
+  fail 'refresh accepted an empty family list'
+fi
+[[ ! -e "$work/catalog/empty.json" ]] || fail 'empty family list created a catalog'
+
 chmod 640 "$work/catalog/models.json"
 
 PATH="$work/bin:$PATH" OPEN_ROUTER_KEY=test-key "$REFRESH" \

@@ -1,29 +1,38 @@
 # Dotfiles
 
-Portable Codex configuration, with an optional OpenRouter model selector.
-Other Bash customizations can be added later.
+Portable Codex configuration for Bash and Zsh, with an optional OpenRouter
+model selector. Other shell customizations can be added later.
 
 ## Install
 
-Prerequisites: Lua 5.4 or newer, Bash 4 or newer, Codex CLI on `PATH`, and
-standard Unix utilities. The installer bundles its Lua libraries and does not
-require Python or LuaRocks. Clone this repository somewhere stable and run:
+Prerequisites: Lua 5.4 or newer, Bash 3.2 or newer, Codex CLI on `PATH`, and
+standard Unix utilities. Zsh is needed to use the Zsh integration. The installer
+bundles its Lua libraries and does not require Python or LuaRocks. Clone this repository somewhere stable and run:
 
 ```bash
 lua install.lua
 ```
 
-**The default installation does not install OpenRouter configuration, Bash
+**The default installation does not install OpenRouter configuration, shell
 functions, scripts, or catalog inputs.** The checkout still contains those
 optional files; they are not linked or merged into your home directory.
 Configure an appropriate provider for your environment separately. Do not use
 OpenRouter at work if your workplace prohibits it.
 
 The installer uses `$CODEX_HOME` if set, otherwise `~/.codex`. It links the
-shared global `AGENTS.md` and Bash integration there. Existing Bash content is
-preserved and a guarded source line is added to `~/.bashrc_local`. Ensure
-`~/.bashrc` sources that file, then start a new shell or source it. For a
-custom `CODEX_HOME`, set it before sourcing the file and running the installer.
+global `AGENTS.md` and both Bash and Zsh integration files there. Existing
+startup content is preserved:
+
+- Bash: a guarded source line is added to `~/.bashrc_local`. Ensure `~/.bashrc`
+  sources that file.
+- Zsh: a guarded source line is added directly to `${ZDOTDIR:-$HOME}/.zshrc`.
+  The installer uses `ZDOTDIR` from its environment, or `HOME` when unset; the
+  chosen directory must already exist. If `.zshenv` sets an unexported
+  `ZDOTDIR`, pass the same value to the installer explicitly.
+
+Start a new shell after installing. Set a custom `CODEX_HOME` before running
+the installer and before the shell loads its startup file. Ensure your Codex
+executable is on `PATH` in each shell.
 
 The shared TOML files are templates, not symlinks. The installer merges their
 settings into local `config.toml` and `granular.config.toml`, preserving
@@ -50,8 +59,9 @@ lua install.lua --include-openrouter
 
 This adds the OpenRouter provider, models and catalog path to the generated
 Codex configs; links the picker, catalog refresh and sanitization scripts, and
-catalog inputs; and sources an additional Bash integration. **Ordinary `codex`
-invocations then use the configured OpenRouter provider and granular model,**
+catalog inputs; and sources additional Bash and Zsh integrations. **Ordinary
+`codex` invocations then use the configured OpenRouter provider and granular
+model,**
 not just `codex pick`. The option is an installation-time opt-in: no additional
 per-command environment flag is needed. `jq`, `fzf`, `curl`, and `stat` are
 needed for the picker and catalog tools.
@@ -83,9 +93,9 @@ and Herdr-managed hooks are not synchronized.
 
 Re-run `lua install.lua` **without** `--include-openrouter`. It removes settings
 that this installer previously managed, removes optional symlinks that still
-point to this checkout, and removes its optional Bash source line. It does not
-delete a generated local catalog or unmanaged files. Start a new shell so any
-previously loaded OpenRouter functions are no longer active. Re-running the
+point to this checkout, and removes its optional Bash and Zsh source lines. It
+does not delete a generated local catalog or unmanaged files. Start a new shell
+so any previously loaded OpenRouter functions are no longer active. Re-running the
 installer with the flag restores the optional integration.
 
 If existing local configs contain unmanaged OpenRouter references, default
@@ -104,7 +114,10 @@ where available. This repo does not certify any provider for work use.
 ## Tests
 
 The persistent suites require Python 3.11 or newer in addition to the runtime
-dependencies. Set `LUA` to an interpreter path if it is not named `lua`.
+dependencies. Zsh integration tests run when `zsh` is available; set `TEST_ZSH`
+to a Zsh executable to use another runtime. Set `LUA` to an interpreter path if
+it is not named `lua`. The shell suites can also be run with Bash 3.2 by putting
+its `bash` executable first on `PATH`.
 
 ```bash
 python3 -m unittest discover -s tests -v
