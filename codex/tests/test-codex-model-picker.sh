@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
-PICKER="$ROOT/scripts/pick-codex-model.sh"
+PICKER="$ROOT/scripts/pick-openrouter-model.sh"
 BASHRC="$ROOT/../bash/codex.bash"
 OPTIONAL_BASHRC="$ROOT/../bash/codex-openrouter.bash"
 work=$(mktemp -d)
@@ -314,7 +314,7 @@ mkdir -p "$work/home/.secrets" "$work/codex-home/scripts"
 printf '%s' mocked-router >"$work/home/.secrets/openrouter"
 printf '%s' mocked-bedrock >"$work/home/.secrets/bedrock"
 printf '%s' mocked-foundry >"$work/home/.secrets/kimik.foundry"
-cat >"$work/codex-home/scripts/pick-codex-model.sh" <<'PICK'
+cat >"$work/codex-home/scripts/pick-openrouter-model.sh" <<'PICK'
 #!/usr/bin/env bash
 jq -n --args '$ARGS.positional' -- "$@" >"$STUB_WORK/routed.json"
 exec "$STUB_WORK/bin/codex" "$@"
@@ -330,7 +330,7 @@ run_bash_function() {
     "$bash_bin" -c 'source "$BASHRC"; source "$OPTIONAL_BASHRC"; "$@"' bash "$@"
 }
 reset_case
-run_bash_function codex pick -C 'directory with spaces' 'test prompt'
+run_bash_function codex pick --openrouter -C 'directory with spaces' 'test prompt'
 jq -e --arg bin "$work/bin/codex" '.[0:3] == ["--codex-bin", $bin, "--"] and .[3:] == ["--profile", "granular", "-C", "directory with spaces", "test prompt"]' "$work/routed.json" >/dev/null || fail 'picker routing failed'
 assert_jq '.editor == "micro" and .router == "mocked-router" and .bedrock == "mocked-bedrock" and .foundry == "mocked-foundry"' "$work/env.json"
 for invocation in bare args; do

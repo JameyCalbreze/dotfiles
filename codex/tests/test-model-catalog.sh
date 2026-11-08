@@ -138,10 +138,11 @@ fi
 cat >"$work/exceptions.json" <<'EOF'
 {"exceptions":[{"id":"openai/eu-exception-test","region":"eu"}]}
 EOF
-PATH="$work/bin:$PATH" OPEN_ROUTER_KEY=test-key "$REFRESH" \
+eu_output=$(PATH="$work/bin:$PATH" OPEN_ROUTER_KEY=test-key "$REFRESH" \
   --families "$work/families.txt" --exceptions "$work/exceptions.json" \
   --exceptions-endpoint eu-fixture --endpoint regular-fixture \
-  --target "$catalog" >/dev/null
+  --target "$catalog")
+[[ $eu_output == *'codex pick --openrouter'* ]] || fail 'EU guidance must name the region-aware picker'
 assert_jq '.models | length == 3' "$catalog"
 assert_jq '(.models[] | select(.slug == "openai/eu-exception-test") | .openrouter_region == "eu" and .context_window == 1050000 and .default_reasoning_level == "medium")' "$catalog"
 assert_jq 'all(.models[] | select(.slug != "openai/eu-exception-test"); has("openrouter_region") | not)' "$catalog"

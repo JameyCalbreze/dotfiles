@@ -284,12 +284,10 @@ local function prepare_configs(codex_home, include_openrouter)
     local shared_path = join(ROOT, "codex/" .. name)
     if not is_file(shared_path) then error("missing repository file: " .. shared_path, 0) end
     local shared = read_toml(shared_path)
-    if include_openrouter then
-      local optional_name = name == "config.toml" and "openrouter.config.toml" or "openrouter-granular.config.toml"
-      local optional_path = join(ROOT, "codex/" .. optional_name)
+    if include_openrouter and name == "config.toml" then
+      local optional_path = join(ROOT, "codex/openrouter.config.toml")
       if not is_file(optional_path) then error("missing repository file: " .. optional_path, 0) end
       merge(shared, read_toml(optional_path), "")
-      if name == "config.toml" then shared.model_catalog_json = join(codex_home, "models.json") end
     end
     if name == "granular.config.toml" then
       shared.permissions = shared.permissions or {}
@@ -405,6 +403,9 @@ local function main()
     { join(ROOT, "codex/AGENTS.md"), join(codex_home, "AGENTS.md") },
     { join(ROOT, "bash/codex.bash"), join(codex_home, "scripts/codex-shell.bash") },
     { join(ROOT, "zsh/codex.zsh"), join(codex_home, "scripts/codex-shell.zsh") },
+    { join(ROOT, "codex/scripts/pick-codex-model.sh"), join(codex_home, "scripts/pick-codex-model.sh") },
+    { join(ROOT, "codex/scripts/codex-profile-config.lua"), join(codex_home, "scripts/codex-profile-config.lua") },
+    { join(ROOT, "vendor/tinytoml.lua"), join(codex_home, "scripts/codex-toml.lua") },
   }
   local optional_links = {
     { join(ROOT, "bash/codex-openrouter.bash"), join(codex_home, "scripts/codex-openrouter-shell.bash") },
@@ -413,7 +414,7 @@ local function main()
   for _, name in ipairs({ "openrouter-model-families.txt", "openrouter-model-exceptions.json" }) do
     optional_links[#optional_links + 1] = { join(ROOT, "codex/" .. name), join(codex_home, name) }
   end
-  for _, name in ipairs({ "pick-codex-model.sh", "refresh-openrouter-model-catalog.sh", "strip-model-system-prompts.sh" }) do
+  for _, name in ipairs({ "pick-openrouter-model.sh", "refresh-openrouter-model-catalog.sh", "strip-model-system-prompts.sh" }) do
     optional_links[#optional_links + 1] = { join(ROOT, "codex/scripts/" .. name), join(codex_home, "scripts/" .. name) }
   end
   if include_openrouter then

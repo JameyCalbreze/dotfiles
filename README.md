@@ -1,13 +1,16 @@
 # Dotfiles
 
-Portable Codex configuration for Bash and Zsh, with an optional OpenRouter
-model selector. Other shell customizations can be added later.
+Portable Codex configuration and a provider-neutral model picker for Bash and
+Zsh, with optional OpenRouter support. Other shell customizations can be added
+later.
 
 ## Install
 
 Prerequisites: Lua 5.4 or newer, Bash 3.2 or newer, Codex CLI on `PATH`, and
-standard Unix utilities. Zsh is needed to use the Zsh integration. The installer
-bundles its Lua libraries and does not require Python or LuaRocks. Clone this repository somewhere stable and run:
+standard Unix utilities. The picker also needs `jq`, `fzf`, and a Codex version
+with app-server `model/list` support. Zsh is needed for the Zsh integration. The
+installer bundles its Lua libraries and does not require Python or LuaRocks.
+Clone this repository somewhere stable and run:
 
 ```bash
 lua install.lua
@@ -20,7 +23,8 @@ Configure an appropriate provider for your environment separately. Do not use
 OpenRouter at work if your workplace prohibits it.
 
 The installer uses `$CODEX_HOME` if set, otherwise `~/.codex`. It links the
-global `AGENTS.md` and both Bash and Zsh integration files there. Existing
+global `AGENTS.md`, the generic picker, and both Bash and Zsh integration files
+there. Existing
 startup content is preserved:
 
 - Bash: a guarded source line is added to `~/.bashrc_local`. Ensure `~/.bashrc`
@@ -49,6 +53,30 @@ changing its target. The installer does not edit `~/.bashrc` or install
 packages. On the original machine, `~/.codex` is itself a Git checkout, so
 installing there will appear as changes in that separate checkout.
 
+## Generic Codex picker
+
+`codex pick` is installed by default in both Bash and Zsh:
+
+```bash
+codex pick
+codex pick -C /path/to/project "Review this project"
+```
+
+The picker asks the local Codex app server for models available to the
+configured provider and account, then uses `fzf` to select a model and supported
+reasoning effort. It passes through the selected model and effort without
+switching providers or adding an OpenRouter endpoint. The app server may
+contact the configured provider when discovering models. Profile, working
+directory, and model/provider-related profile and configuration overrides are
+used for discovery and forwarded to Codex. For safety, profile-scoped provider
+settings with inline headers, credentials, or unsupported fields are rejected;
+move those provider definitions to `config.toml` instead. Escape or Ctrl-C
+cancels; no session is launched. Remote
+Codex connections are not supported by this picker. Use `codex pick --
+"--model is prompt text"` for a prompt beginning with a dash. If your existing
+Codex configuration selects OpenRouter, the generic picker uses that configured
+provider; the installer does not override unmanaged settings.
+
 ## Optional OpenRouter installation
 
 Only on an approved machine, explicitly include OpenRouter:
@@ -57,35 +85,34 @@ Only on an approved machine, explicitly include OpenRouter:
 lua install.lua --include-openrouter
 ```
 
-This adds the OpenRouter provider, models and catalog path to the generated
-Codex configs; links the picker, catalog refresh and sanitization scripts, and
-catalog inputs; and sources additional Bash and Zsh integrations. **Ordinary
-`codex` invocations then use the configured OpenRouter provider and granular
-model,**
-not just `codex pick`. The option is an installation-time opt-in: no additional
-per-command environment flag is needed. `jq`, `fzf`, `curl`, and `stat` are
-needed for the picker and catalog tools.
+This adds the OpenRouter provider and profile, plus the optional OpenRouter
+picker, catalog refresh and sanitization scripts, and catalog inputs. It does
+**not** change the default provider or model: ordinary `codex` and `codex pick`
+continue to use the configured provider. Existing unmanaged settings are
+preserved, so review them separately. Reinstalling after an earlier version of
+this repo removes its previously managed OpenRouter defaults, with backups.
+`curl` and `stat` are also needed for the optional catalog tools.
 
-After opting in, create the local catalog and use the picker:
+After opting in, refresh the local catalog and explicitly choose OpenRouter:
 
 ```bash
 codex-openrouter-models
-codex pick
-codex pick -C /path/to/project "Review this project"
+codex pick --openrouter
+codex pick --openrouter -C /path/to/project "Review this project"
 ```
 
-The picker selects a model and supported reasoning effort with `fzf`; Escape or
-Ctrl-C cancels. It passes the selected model, effort, provider, and catalog to
-Codex and rejects conflicting overrides. Use `codex pick -- "--model is prompt
-text"` for a prompt beginning with a dash. Family filters and optional EU
-exceptions are in `codex/openrouter-model-families.txt` and
-`codex/openrouter-model-exceptions.json`. EU exceptions use the EU endpoint
-when launched via the picker and require appropriate OpenRouter account access.
+The OpenRouter picker uses the local catalog and passes an OpenRouter provider
+only for that launch. Family filters and optional EU exceptions are in
+`codex/openrouter-model-families.txt` and `codex/openrouter-model-exceptions.json`.
+EU exceptions use the EU endpoint when launched via this picker and require
+appropriate OpenRouter account access. The generic picker does not apply this
+regional metadata; use `codex pick --openrouter` for OpenRouter EU exceptions.
 
 The functions use existing `BEDROCK_API_KEY` and `FOUNDRY_KIMIK_KEY` values,
 or matching files under `~/.secrets` when present. The optional integration
-similarly uses `OPEN_ROUTER_KEY` or `~/.secrets/openrouter`. Keys are never
-copied into this repository; file-loaded secrets stay in the invoked process.
+uses `OPEN_ROUTER_KEY` or `~/.secrets/openrouter` for the OpenRouter picker and
+catalog refresh. Keys are never copied into this repository; file-loaded
+secrets stay in the invoked process.
 Catalogs, backups, sessions, databases, logs, machine trust, approval rules,
 and Herdr-managed hooks are not synchronized.
 
@@ -117,7 +144,9 @@ The persistent suites require Python 3.11 or newer in addition to the runtime
 dependencies. Zsh integration tests run when `zsh` is available; set `TEST_ZSH`
 to a Zsh executable to use another runtime. Set `LUA` to an interpreter path if
 it is not named `lua`. The shell suites can also be run with Bash 3.2 by putting
-its `bash` executable first on `PATH`.
+its `bash` executable first on `PATH`. Setting `TEST_REAL_CODEX` to a Codex
+executable enables a credential-free app-server smoke test that cancels before
+launch; the app server may contact its configured provider.
 
 ```bash
 python3 -m unittest discover -s tests -v

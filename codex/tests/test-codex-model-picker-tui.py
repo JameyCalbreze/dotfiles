@@ -93,7 +93,7 @@ class ModelPickerTuiTests(unittest.TestCase):
         env = dict(os.environ, TERM="xterm-256color", TEST_ARGV_FILE=str(self.argv_file),
                    FZF_DEFAULT_OPTS="--filter=wrong --multi", FZF_DEFAULT_OPTS_FILE="/nonexistent")
         self.terminal = Terminal([
-            str(ROOT / "scripts/pick-codex-model.sh"),
+            str(ROOT / "scripts/pick-openrouter-model.sh"),
             "--catalog", str(self.catalog),
             "--codex-bin", str(self.codex),
         ], env)

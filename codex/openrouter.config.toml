@@ -1,7 +1,4 @@
-# Installed only with --include-openrouter.
-model = "openai/gpt-5.4"
-model_provider = "open_router"
-
+# Installed only with --include-openrouter; does not change the default provider.
 [model_providers.open_router]
 name = "Open Router"
 base_url = "https://openrouter.ai/api/v1"

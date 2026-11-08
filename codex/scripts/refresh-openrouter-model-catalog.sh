@@ -33,7 +33,7 @@ Options:
   -h, --help       Show this help text.
 
 OPEN_ROUTER_KEY must be set in the environment. The key is never written to disk.
-EU exception metadata is fetched without credentials. Use codex pick to apply
+EU exception metadata is fetched without credentials. Use codex pick --openrouter to apply
 the generated routing metadata; ordinary model selection does not enforce it.
 EOF
 }
@@ -231,5 +231,5 @@ rm -f -- "$raw" "$exception_raw"
 printf 'Wrote %s OpenRouter model(s) to %s\n' "$generated_count" "$target"
 exception_count=$(jq '[.models[] | select(.openrouter_region == "eu")] | length' "$target")
 if ((exception_count > 0)); then
-  printf 'Included %s EU routing exception(s); launch them with codex pick (Business/Enterprise required)\n' "$exception_count"
+  printf 'Included %s EU routing exception(s); launch them with codex pick --openrouter (Business/Enterprise required)\n' "$exception_count"
 fi

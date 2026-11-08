@@ -10,11 +10,16 @@ codex() (
   local executable
   executable=$(type -P codex) || { printf 'codex: executable not found in PATH\n' >&2; return 1; }
   _codex_load_credentials
-  _codex_load_openrouter_key
   export EDITOR=micro
   if [[ ${1:-} == pick ]]; then
     shift
-    "$CODEX_HOME/scripts/pick-codex-model.sh" --codex-bin "$executable" -- --profile granular "$@"
+    if [[ ${1:-} == --openrouter ]]; then
+      shift
+      _codex_load_openrouter_key
+      "$CODEX_HOME/scripts/pick-openrouter-model.sh" --codex-bin "$executable" -- --profile granular "$@"
+    else
+      "$CODEX_HOME/scripts/pick-codex-model.sh" --codex-bin "$executable" -- --profile granular "$@"
+    fi
   else
     "$executable" --profile granular "$@"
   fi

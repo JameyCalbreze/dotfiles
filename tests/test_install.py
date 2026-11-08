@@ -55,7 +55,8 @@ class InstallerTests(unittest.TestCase):
         self.assertEqual((self.codex / 'AGENTS.md').resolve(), self.repo / 'codex/AGENTS.md')
         self.assertTrue((self.codex / 'scripts/codex-shell.bash').is_symlink())
         self.assertTrue((self.codex / 'scripts/codex-shell.zsh').is_symlink())
-        for name in ('pick-codex-model.sh', 'refresh-openrouter-model-catalog.sh', 'strip-model-system-prompts.sh', 'codex-openrouter-shell.bash', 'codex-openrouter-shell.zsh'):
+        self.assertTrue((self.codex / 'scripts/pick-codex-model.sh').is_symlink())
+        for name in ('pick-openrouter-model.sh', 'refresh-openrouter-model-catalog.sh', 'strip-model-system-prompts.sh', 'codex-openrouter-shell.bash', 'codex-openrouter-shell.zsh'):
             self.assertFalse((self.codex / 'scripts' / name).exists())
         self.assertFalse((self.codex / 'openrouter-model-families.txt').exists())
         self.assertFalse((self.codex / 'openrouter-model-exceptions.json').exists())
@@ -96,18 +97,17 @@ class InstallerTests(unittest.TestCase):
 
     def test_include_openrouter_installs_all_optional_files_and_config(self):
         self.install(include_openrouter=True)
-        for name in ('pick-codex-model.sh', 'refresh-openrouter-model-catalog.sh',
+        for name in ('pick-openrouter-model.sh', 'refresh-openrouter-model-catalog.sh',
                      'strip-model-system-prompts.sh', 'codex-openrouter-shell.bash', 'codex-openrouter-shell.zsh'):
             self.assertTrue((self.codex / 'scripts' / name).is_symlink(), name)
         for name in ('openrouter-model-families.txt', 'openrouter-model-exceptions.json'):
             self.assertTrue((self.codex / name).is_symlink(), name)
         base = self.load('config.toml')
-        self.assertEqual(base['model'], 'openai/gpt-5.4')
-        self.assertEqual(base['model_provider'], 'open_router')
-        self.assertEqual(base['model_catalog_json'], str(self.codex / 'models.json'))
+        for key in ('model', 'model_provider', 'model_catalog_json'):
+            self.assertNotIn(key, base)
         self.assertEqual(base['model_providers']['open_router']['base_url'], 'https://openrouter.ai/api/v1')
         self.assertEqual(base['profiles']['openrouter_glm']['model_provider'], 'open_router')
-        self.assertEqual(self.load('granular.config.toml')['model'], 'deepseek/deepseek-v4.1-flash')
+        self.assertNotIn('model', self.load('granular.config.toml'))
         shell = (self.home / '.bashrc_local').read_text()
         self.assertEqual(shell.count('source "${CODEX_HOME:-$HOME/.codex}/scripts/codex-openrouter-shell.bash"'), 1)
         zshrc = (self.home / '.zshrc').read_text()
@@ -122,7 +122,7 @@ class InstallerTests(unittest.TestCase):
         catalog = self.codex / 'models.json'
         catalog.write_text('{"models": []}\n')
         self.install()
-        for name in ('pick-codex-model.sh', 'refresh-openrouter-model-catalog.sh',
+        for name in ('pick-openrouter-model.sh', 'refresh-openrouter-model-catalog.sh',
                      'strip-model-system-prompts.sh', 'codex-openrouter-shell.bash', 'codex-openrouter-shell.zsh'):
             self.assertFalse((self.codex / 'scripts' / name).exists(), name)
         for name in ('openrouter-model-families.txt', 'openrouter-model-exceptions.json'):
@@ -139,12 +139,12 @@ class InstallerTests(unittest.TestCase):
         self.install()
         self.assertFalse((self.codex / 'config.toml.dotfiles-backup.2').exists())
         self.install(include_openrouter=True)
-        self.assertTrue((self.codex / 'scripts/pick-codex-model.sh').is_symlink())
-        self.assertEqual(self.load('config.toml')['model_provider'], 'open_router')
+        self.assertTrue((self.codex / 'scripts/pick-openrouter-model.sh').is_symlink())
+        self.assertIn('open_router', self.load('config.toml')['model_providers'])
 
     def test_default_does_not_remove_unmanaged_optional_files(self):
         (self.codex / 'scripts').mkdir(parents=True)
-        local_script = self.codex / 'scripts/pick-codex-model.sh'
+        local_script = self.codex / 'scripts/pick-openrouter-model.sh'
         local_script.write_text('local script\n')
         local_families = self.codex / 'openrouter-model-families.txt'
         local_families.write_text('local families\n')
@@ -160,7 +160,8 @@ class InstallerTests(unittest.TestCase):
         self.install()
         result = self.install(False, include_openrouter=True)
         self.assertIn('missing repository file', result.stderr)
-        self.assertFalse((self.codex / 'scripts/pick-codex-model.sh').exists())
+        self.assertFalse((self.codex / 'scripts/pick-openrouter-model.sh').exists())
+        self.assertTrue((self.codex / 'scripts/pick-codex-model.sh').is_symlink())
 
     def test_existing_openrouter_config_allowed_only_with_explicit_flag(self):
         self.codex.mkdir()
@@ -170,7 +171,7 @@ class InstallerTests(unittest.TestCase):
         config = self.load('config.toml')
         self.assertEqual(config['model_provider'], 'open_router')
         self.assertTrue(config['local']['keep'])
-        self.assertTrue((self.codex / 'scripts/pick-codex-model.sh').is_symlink())
+        self.assertTrue((self.codex / 'scripts/pick-openrouter-model.sh').is_symlink())
 
     def test_invalid_install_options_do_not_write(self):
         for option, success in (('--help', True), ('--unknown', False)):
@@ -376,6 +377,35 @@ trust_level = "trusted"
         self.assertNotIn('model', self.load('granular.config.toml'))
         self.assertTrue((self.codex / 'config.toml.dotfiles-backup.1').exists())
 
+    def test_previous_openrouter_opt_in_migrates_to_provider_neutral_defaults(self):
+        self.codex.mkdir()
+        (self.codex / 'config.toml').write_text('''model = "openai/gpt-5.4"
+model_provider = "open_router"
+model_catalog_json = "old.json"
+[model_providers.open_router]
+name = "Open Router"
+base_url = "https://openrouter.ai/api/v1"
+env_key = "OPEN_ROUTER_KEY"
+wire_api = "responses"
+[projects."/work"]
+trust_level = "trusted"
+''')
+        (self.codex / 'granular.config.toml').write_text('model = "deepseek/deepseek-v4.1-flash"\n')
+        (self.codex / '.dotfiles-managed-config.json').write_text(json.dumps({
+            'config.toml': [['model'], ['model_provider'], ['model_catalog_json'],
+                            *[['model_providers', 'open_router', key] for key in ('name', 'base_url', 'env_key', 'wire_api')]],
+            'granular.config.toml': [['model']],
+        }))
+        self.install(include_openrouter=True)
+        base = self.load('config.toml')
+        self.assertFalse(any(key in base for key in ('model', 'model_provider', 'model_catalog_json')))
+        self.assertIn('open_router', base['model_providers'])
+        self.assertEqual(base['projects']['/work']['trust_level'], 'trusted')
+        self.assertNotIn('model', self.load('granular.config.toml'))
+        self.assertTrue((self.codex / 'config.toml.dotfiles-backup.1').exists())
+        self.assertTrue((self.codex / 'scripts/pick-openrouter-model.sh').is_symlink())
+        self.assertTrue((self.codex / 'scripts/pick-codex-model.sh').is_symlink())
+
     def test_previous_python_metadata_is_migrated(self):
         self.codex.mkdir()
         (self.codex / 'config.toml').write_text('obsolete = "old"\n[local]\nkeep = true\n')
@@ -466,14 +496,14 @@ trust_level = "trusted"
         def shell(command):
             return subprocess.run(['bash', '-c', 'source "$HOME/.bashrc_local"; ' + command],
                                   env=env, text=True, capture_output=True)
-        missing = shell('codex pick')
+        missing = shell('codex pick --openrouter')
         self.assertNotEqual(missing.returncode, 0)
         self.assertIn('catalogue not readable', missing.stderr)
         self.assertFalse((self.base / 'launch args').exists())
         refreshed = shell('codex-openrouter-models')
         self.assertEqual(refreshed.returncode, 0, refreshed.stderr)
         self.assertTrue((self.codex / 'models.json').is_file())
-        launched = shell('codex pick')
+        launched = shell('codex pick --openrouter')
         self.assertEqual(launched.returncode, 0, launched.stderr)
         args = (self.base / 'launch args').read_text().splitlines()
         self.assertEqual(args[:2], ['--model', 'anthropic/claude-test'])
@@ -553,7 +583,7 @@ exit "${TEST_CODEX_STATUS:-0}"
         result = subprocess.run([ZSH, '-i', '-c', 'codex-openrouter-models'], env=env, cwd=self.home, text=True, capture_output=True)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertTrue((self.codex / 'models.json').is_file())
-        command = 'codex pick -C "$TEST_PROJECT" "$TEST_PROMPT"; print -r -- "local:${OPEN_ROUTER_KEY-unset}"'
+        command = 'codex pick --openrouter -C "$TEST_PROJECT" "$TEST_PROMPT"; print -r -- "local:${OPEN_ROUTER_KEY-unset}"'
         result = subprocess.run([ZSH, '-i', '-c', command], env=env, cwd=self.home, text=True, capture_output=True)
         self.assertEqual(result.returncode, 0, result.stderr)
         args = (self.base / 'args').read_text().splitlines()

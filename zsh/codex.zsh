@@ -19,6 +19,11 @@ codex() {
     executable=$(whence -p codex) || { printf 'codex: executable not found in PATH\n' >&2; return 1; }
     _codex_load_credentials
     export EDITOR=micro
-    "$executable" --profile granular "$@"
+    if [[ ${1:-} == pick ]]; then
+      shift
+      "$CODEX_HOME/scripts/pick-codex-model.sh" --codex-bin "$executable" -- --profile granular "$@"
+    else
+      "$executable" --profile granular "$@"
+    fi
   )
 }
