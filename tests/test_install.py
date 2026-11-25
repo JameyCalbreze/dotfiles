@@ -234,7 +234,7 @@ class InstallerTests(unittest.TestCase):
         self.assertNotIn('bedrock_glm', standard.get('profiles', {}))
         self.assertNotIn('bedrock_glm', optional.get('profiles', {}))
         self.assertIn('open_router', optional['model_providers'])
-        self.assertIn('openrouter_glm', optional['profiles'])
+        self.assertNotIn('openrouter_glm', optional.get('profiles', {}))
 
     def test_openrouter_target_installs_allowlisted_prompt_free_catalog(self):
         bindir = self.base / 'stub bin'
