@@ -1,4 +1,4 @@
-# Optional OpenRouter integration; sourced only with --include-openrouter.
+# Optional OpenRouter integration; source explicitly after the shared integration.
 _codex_load_openrouter_key() {
   if [[ -z ${OPEN_ROUTER_KEY:-} && -r $HOME/.secrets/openrouter ]]; then
     OPEN_ROUTER_KEY=$(< "$HOME/.secrets/openrouter")

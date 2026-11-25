@@ -60,7 +60,7 @@ check_codex_args() {
     case "$arg" in
       --) break ;;
       --model|--model=*) argument_error "option conflicts with the picker: $arg" ;;
-      --openrouter) argument_error 'OpenRouter selection requires --include-openrouter on an approved machine' ;;
+      --openrouter) argument_error 'OpenRouter selection requires OPENROUTER=1 installation on an approved machine' ;;
       --remote|--remote=*|--remote-auth-token-env|--remote-auth-token-env=*)
         argument_error "remote Codex connections are not supported by this picker: $arg" ;;
       --profile)

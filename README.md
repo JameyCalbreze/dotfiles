@@ -1,233 +1,146 @@
 # Dotfiles
 
-Portable Codex, Herdr, and Ghostty configuration for macOS and Linux, plus a
-provider-neutral model picker for Bash and Zsh with optional OpenRouter support.
+Shared Codex, Herdr, and Ghostty configuration for Linux and macOS, with Bash
+and Zsh Codex model pickers. Clone the repository somewhere stable: installed
+files are symlinks back to this checkout, so editing them edits the repository.
 
 ## Install
 
-Prerequisites: Lua 5.4 or newer, Bash 3.2 or newer, Codex CLI on `PATH`, and
-standard Unix utilities. The picker also needs `jq`, `fzf`, and a Codex version
-with app-server `model/list` support. Zsh is needed for the Zsh integration. The
-installer bundles its Lua libraries and does not require Python or LuaRocks.
-Clone this repository somewhere stable and run:
+From the checkout, run either:
 
-```bash
-lua install.lua
+```sh
+make linux
+make macos
 ```
 
-**The default installation does not install OpenRouter configuration, shell
-functions, scripts, or catalog inputs.** The checkout still contains those
-optional files; they are not linked or merged into your home directory.
-Configure an appropriate provider for your environment separately. Do not use
-OpenRouter at work if your workplace prohibits it.
+Both targets install the shared files. They need `make` and standard Unix
+utilities; they do not install applications, fonts, or packages. Defaults work
+for any user on either platform:
 
-The installer uses `$CODEX_HOME` if set, otherwise `~/.codex`. It links the
-global `AGENTS.md`, the generic picker, and both Bash and Zsh integration files
-there. Existing
-startup content is preserved:
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `CODEX_HOME` | `$HOME/.codex` | Codex configs, rules, instructions, and scripts |
+| `XDG_CONFIG_HOME` | `$HOME/.config` | Base directory for Ghostty and Herdr |
+| `HERDR_CONFIG_PATH` | `$XDG_CONFIG_HOME/herdr/config.toml` | Herdr config override |
 
-- Bash: a guarded source line is added to `~/.bashrc_local`. Ensure `~/.bashrc`
-  sources that file.
-- Zsh: managed integration lines are placed in
-  `${ZDOTDIR:-$HOME}/.zsh_profile`, and `.zshrc` sources that file. The
-  installer recognizes common existing profile imports and avoids duplicating
-  its own source line on updates. It moves its exact legacy direct-source
-  lines out of `.zshrc`, preserving other content and backing up changed files.
-  Complex user-written shell logic is not parsed; review existing imports if
-  they use a nonstandard form.
+Ghostty is installed at `$XDG_CONFIG_HOME/ghostty/config`. Set overrides in
+the environment before running Make and when starting the relevant programs:
 
-  The installer uses `ZDOTDIR` from its environment, or `HOME` when unset; the
-  chosen directory must already exist. If `.zshenv` sets an unexported
-  `ZDOTDIR`, pass the same value to the installer explicitly.
+```sh
+CODEX_HOME="$HOME/my-codex" XDG_CONFIG_HOME="$HOME/my-config" make linux
+HERDR_CONFIG_PATH="$HOME/my-herdr.toml" make macos
+```
 
-Start a new shell after installing. Set a custom `CODEX_HOME` before running
-the installer and before the shell loads its startup file. Ensure your Codex
-executable is on `PATH` in each shell.
+`XDG_CONFIG_HOME`, when set, must be a nonempty absolute path. An explicitly
+empty `HERDR_CONFIG_PATH` is rejected; relative Codex and Herdr overrides are
+resolved relative to the directory where Make runs. An unset or empty
+`CODEX_HOME` uses its default. The installer rejects overlapping destinations
+and destinations inside this repository.
 
-The shared Codex TOML files are templates, not symlinks. The installer merges their
-settings into local `config.toml` and `granular.config.toml`, preserving
-unmanaged values such as project trust, additional providers, and hook state.
-Every successful install creates or restores the `granular.config.toml` profile,
-whether or not OpenRouter is included. A preflight failure, including unmanaged
-OpenRouter references in default mode, leaves both configs unchanged.
-The default templates do not choose a model, provider, or model catalog.
-Managed settings removed from the templates are removed on the next install;
-metadata recording managed keys stays in `CODEX_HOME`.
+Existing files and symlinks at install destinations are moved to numbered
+`.dotfiles-backup.N` backups. Directories are not replaced. Repeated installs
+leave correct symlinks and backups alone. Codex config and rules are **whole
+files**, not merges: existing machine-local values, including project trust and
+local rules, remain in backups but are no longer active. Review and manually
+copy desired settings into an appropriate local configuration before relying on
+them. Other Codex state, credentials, sessions, and Herdr state remain local.
+Review `codex/rules/default.rules` before installing: it contains broad command
+approvals. Changes to a symlinked config or rules file modify this checkout.
 
-Conflicting files and changed configs are backed up alongside the originals
-with a `.dotfiles-backup.N` suffix. Directories are never replaced. TOML values
-are preserved, but formatting and comments may change. If a config or shell
-file is a symlink, the link is backed up and replaced by a local file without
-changing its target. The installer does not edit `~/.bashrc` or install
-packages. On the original machine, `~/.codex` is itself a Git checkout, so
-installing there will appear as changes in that separate checkout.
-
-## Codex approval rules
-
-The installer ensures every nonempty, non-comment line in
-`codex/rules/default.rules` is present as an exact line in
-`$CODEX_HOME/rules/default.rules` (or `~/.codex/rules/default.rules`). Missing
-lines are appended; existing lines and other rules files are left intact.
-Matching is textual, so differently formatted equivalent rules are not treated
-as matches. Removing a line from the shared file does not remove it from an
-existing installation. Changed files are backed up; a changed symlink is backed
-up and replaced with a local file without modifying its target.
-
-These rules include broad command-prefix approvals such as `git` and Python.
-Review them before installing on another machine. Existing rules may also affect
-the effective policy; review the complete local rules rather than assuming the
-shared entries are the only ones in force.
-
-## Herdr and Ghostty
-
-The installer links the shared Herdr and Ghostty configuration files on both
-macOS and Linux, in addition to the Codex files. By default they are installed
-at `~/.config/herdr/config.toml` and `~/.config/ghostty/config`. When set,
-`XDG_CONFIG_HOME` must be a non-empty absolute path and replaces `~/.config`.
-The installer also honors Herdr's `HERDR_CONFIG_PATH` override; relative paths
-are resolved from the installer's working directory. Use the same environment
-when launching the applications. An empty `HERDR_CONFIG_PATH` is rejected.
-
-These are whole-file symlinks, not merges: existing config files or symlinks
-are backed up before replacement, and settings in them are not retained in the
-active files. Editing a linked file may modify this checkout; an application
-that replaces the file can instead break the link. Re-run the installer to
-restore it, after reviewing any local changes. Herdr sessions, sockets, logs,
-plugins, machine state, and generated hooks remain local and are not linked.
-
-Ghostty may also read `config.ghostty` in the XDG directory and config files
-under `~/Library/Application Support/com.mitchellh.ghostty` on macOS. Those
-files are not modified; the installer warns when it finds them. macOS-specific
-files are loaded later and may override the shared settings. The shared Ghostty
-config approximates the macOS Terminal.app Clear Dark 1 profile with an embedded
-dark palette, 18-point JetBrainsMono Nerd Font, and a slightly transparent,
-blurred background. Install the font separately; the installer does not install
-fonts, and Ghostty falls back if it is unavailable. Transparency and blur depend
-on platform and compositor support. Restart Ghostty or reload its config, and use
-`herdr server reload-config` for an already-running server.
-
-## Generic Codex picker
-
-`codex pick` is installed by default in both Bash and Zsh:
+The installer does not edit shell startup files. To activate the shared shell
+functions, add the appropriate line to your startup configuration:
 
 ```bash
-codex pick
+# Bash (for example, in ~/.bashrc)
+source "${CODEX_HOME:-$HOME/.codex}/scripts/codex-shell.bash"
+```
+
+```zsh
+# Zsh (for example, in ${ZDOTDIR:-$HOME}/.zshrc)
+source "${CODEX_HOME:-$HOME/.codex}/scripts/codex-shell.zsh"
+```
+
+Set a custom `CODEX_HOME` before the shell sources these files. Restart the
+shell after changing startup configuration. Ghostty may also read other XDG or
+macOS-specific config files which can affect the final settings; this installer
+does not modify them. Install JetBrainsMono Nerd Font separately.
+
+## Optional OpenRouter
+
+Only on an approved machine, opt in explicitly:
+
+```sh
+make linux OPENROUTER=1
+# or: make macos OPENROUTER=1
+```
+
+This links a complete OpenRouter-enabled Codex config and the optional picker,
+catalog scripts, and inputs. It does not select OpenRouter as the default
+provider. Source the appropriate optional file **after** the shared one:
+
+```bash
+source "${CODEX_HOME:-$HOME/.codex}/scripts/codex-openrouter-shell.bash"
+```
+
+```zsh
+source "${CODEX_HOME:-$HOME/.codex}/scripts/codex-openrouter-shell.zsh"
+```
+
+Run `codex-openrouter-models` to refresh the catalog and `codex pick
+--openrouter` to choose a model. The EU exception models require suitable
+OpenRouter account access. Credentials come from `OPEN_ROUTER_KEY` or
+`~/.secrets/openrouter` and are not copied to this repository.
+
+Run the platform target again without `OPENROUTER=1` to switch back to the
+standard config and remove optional symlinks that still point to this checkout.
+Unmanaged optional files and generated catalogs are not removed. Remove or
+change your optional shell source line manually, and restart your shell.
+This opt-in controls what this repo installs, not access through other tools or
+configurations. Follow your workplace's provider policies.
+
+## Codex picker and catalog tools
+
+`codex pick` queries the configured Codex provider's app server and uses `fzf`
+to select a model and reasoning effort. For example:
+
+```sh
 codex pick -C /path/to/project "Review this project"
+codex pick -- "--model is prompt text"
 ```
 
-The picker asks the local Codex app server for models available to the
-configured provider and account, then uses `fzf` to select a model and supported
-reasoning effort. It passes through the selected model and effort without
-switching providers or adding an OpenRouter endpoint. The app server may
-contact the configured provider when discovering models. Profile, working
-directory, and model/provider-related profile and configuration overrides are
-used for discovery and forwarded to Codex. For safety, profile-scoped provider
-settings with inline headers, credentials, or unsupported fields are rejected;
-move those provider definitions to `config.toml` instead. Escape or Ctrl-C
-cancels; no session is launched. Remote
-Codex connections are not supported by this picker. Use `codex pick --
-"--model is prompt text"` for a prompt beginning with a dash. If your existing
-Codex configuration selects OpenRouter, the generic picker uses that configured
-provider; the installer does not override unmanaged settings.
+The generic picker needs Bash 3.2+, `jq`, `fzf`, Lua 5.4+, and a Codex CLI
+with app-server `model/list` support. It does not switch providers; canceling
+with Escape or Ctrl-C does not launch a session. Shell integration also reads
+`BEDROCK_API_KEY` and `FOUNDRY_KIMIK_KEY` from the environment or their
+corresponding files in `~/.secrets`.
 
-## Sanitize a local model catalog
+The catalog sanitizer clears every model's `base_instructions` in a local
+catalog, atomically and without making a backup:
 
-The default installation also makes the catalog sanitizer available:
-
-```bash
+```sh
 "${CODEX_HOME:-$HOME/.codex}/scripts/strip-model-system-prompts.sh"
 "${CODEX_HOME:-$HOME/.codex}/scripts/strip-model-system-prompts.sh" --target /path/to/models.json
 ```
 
-It clears the `base_instructions` string on every model in the specified local
-catalog; without `--target`, it uses `$CODEX_HOME/models.json` (or
-`~/.codex/models.json`). The file is replaced atomically and its permissions
-are preserved, but **no backup is created**. It fails without changing the file
-if any model lacks a string `base_instructions`. It requires `jq` and `stat`.
+The default target is `$CODEX_HOME/models.json`. It requires `jq` and `stat`;
+the optional OpenRouter catalog refresh additionally requires `curl`.
 
-The installer and generic picker do not run the sanitizer automatically. It
-changes only the local file, not the provider's models or server-side prompts;
-Codex must be configured to use that catalog for it to affect a session.
+## Migrating from the Lua installer
 
-## Optional OpenRouter installation
-
-Only on an approved machine, explicitly include OpenRouter:
-
-```bash
-lua install.lua --include-openrouter
-```
-
-This adds the OpenRouter provider and profile, plus the optional OpenRouter
-picker, catalog refresh script, and catalog inputs. The refresh uses the shared
-sanitizer automatically. It does
-**not** change the default provider or model: ordinary `codex` and `codex pick`
-continue to use the configured provider. Existing unmanaged settings are
-preserved, so review them separately. Reinstalling after an earlier version of
-this repo removes its previously managed OpenRouter defaults, with backups.
-`curl` and `stat` are also needed for the optional catalog tools.
-
-After opting in, refresh the local catalog and explicitly choose OpenRouter:
-
-```bash
-codex-openrouter-models
-codex pick --openrouter
-codex pick --openrouter -C /path/to/project "Review this project"
-```
-
-The OpenRouter picker uses the local catalog and passes an OpenRouter provider
-only for that launch. Family filters and optional EU exceptions are in
-`codex/openrouter-model-families.txt` and `codex/openrouter-model-exceptions.json`.
-EU exceptions use the EU endpoint when launched via this picker and require
-appropriate OpenRouter account access. The generic picker does not apply this
-regional metadata; use `codex pick --openrouter` for OpenRouter EU exceptions.
-
-The functions use existing `BEDROCK_API_KEY` and `FOUNDRY_KIMIK_KEY` values,
-or matching files under `~/.secrets` when present. The optional integration
-uses `OPEN_ROUTER_KEY` or `~/.secrets/openrouter` for the OpenRouter picker and
-catalog refresh. Keys are never copied into this repository; file-loaded
-secrets stay in the invoked process.
-Catalogs, backups, sessions, databases, logs, machine trust, other approval
-rules files, and Herdr-managed hooks are not synchronized.
-
-## Returning to the default installation
-
-Re-run `lua install.lua` **without** `--include-openrouter`. It removes settings
-that this installer previously managed, removes optional symlinks that still
-point to this checkout, and removes its optional Bash and Zsh profile source
-lines. The `.zshrc` import of `.zsh_profile` remains in place. It does not
-delete a generated local catalog or unmanaged files. Start a new shell
-so any previously loaded OpenRouter functions are no longer active. Re-running the
-installer with the flag restores the optional integration.
-
-If existing local configs contain unmanaged OpenRouter references, default
-installation stops before modifying anything; review those references manually
-or use the flag only on an approved machine. The installer leaves unmanaged
-optional files and existing custom Bash and Zsh definitions untouched, and warns about
-unmanaged optional files it finds. In particular, the original machine's
-independent `~/.codex` and `.bashrc_local` may already use OpenRouter.
-
-This opt-in controls **what this repo installs**, not network access. Existing
-local or project configuration, old shell functions, other tools, or direct
-Codex invocation can still use OpenRouter. Verify your effective configuration
-and workplace policy; use employer-managed network and credential restrictions
-where available. This repo does not certify any provider for work use.
+The former installer merged TOML and rules, created a managed-state file, and
+edited shell startup files. The new installer does none of those things. It
+backs up the old active files before linking the repository versions; review
+the backups for settings that must be retained. The old
+`.dotfiles-managed-config.json` and existing startup lines are left untouched.
+Remove obsolete lines and the state file manually if desired. Existing startup
+lines may still load integration files, including unmanaged OpenRouter files;
+review them separately. The granular profile is now linked as-is and no longer
+receives machine-specific additions from the old installer.
 
 ## Tests
 
-The persistent suites require Python 3.11 or newer in addition to the runtime
-dependencies. Zsh integration tests run when `zsh` is available; set `TEST_ZSH`
-to a Zsh executable to use another runtime. Set `LUA` to an interpreter path if
-it is not named `lua`. The shell suites can also be run with Bash 3.2 by putting
-its `bash` executable first on `PATH`. Setting `TEST_REAL_CODEX` to a Codex
-executable enables a credential-free app-server smoke test that cancels before
-launch; the app server may contact its configured provider.
-
-```bash
-python3 -m unittest discover -s tests -v
-bash codex/tests/test-codex-model-picker.sh
-bash codex/tests/test-model-catalog.sh
-python3 codex/tests/test-codex-model-picker-tui.py
-```
-
-Tests use temporary directories, fixture data, and stub executables; the TUI
-suite uses a real `fzf` in a pseudo-terminal. No real credentials are needed.
+`make test` runs the persistent Python and shell suites. They use temporary
+homes, fixtures, and stub executables. The suites require Python 3.11+, Bash,
+Lua 5.4+, `jq`, and `fzf`; Zsh tests run when Zsh is available. Set `TEST_ZSH`
+to choose a Zsh executable, or `TEST_REAL_CODEX` for the optional real Codex
+app-server smoke test. The latter may contact the configured provider.

@@ -1,4 +1,23 @@
-# Installed only with --include-openrouter; does not change the default provider.
+approval_policy = "on-request"
+approvals_reviewer = "user"
+model_reasoning_effort = "medium"
+
+[profiles.bedrock_glm]
+model_provider = "aws_bedrock"
+model = "zai.glm-5"
+model_context_window = 200000
+model_auto_compact_token_limit = 195000
+model_max_output_tokens = 128000
+
+[tui]
+status_line = ["model-with-reasoning", "current-dir", "model", "reasoning", "context-used", "used-tokens", "total-input-tokens", "total-output-tokens"]
+status_line_use_colors = true
+
+[features]
+hooks = true
+terminal_resize_reflow = true
+
+# OpenRouter is available explicitly; the default provider is unchanged.
 [model_providers.open_router]
 name = "Open Router"
 base_url = "https://openrouter.ai/api/v1"

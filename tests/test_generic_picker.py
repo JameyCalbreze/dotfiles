@@ -283,9 +283,12 @@ http_headers = { Authorization = "Bearer fake-secret" }
         secrets.mkdir()
         (secrets / 'openrouter').write_text('do-not-use')
         env = dict(self.env, HOME=str(home), CODEX_HOME=str(home / '.codex'), ZDOTDIR=str(home))
-        args = [lua, str(ROOT / 'install.lua')]
+        env.pop('XDG_CONFIG_HOME', None)
+        env.pop('HERDR_CONFIG_PATH', None)
+        env.pop('OPENROUTER', None)
+        args = ['make', '-C', str(ROOT), 'linux']
         if include_openrouter:
-            args.append('--include-openrouter')
+            args.append('OPENROUTER=1')
         result = subprocess.run(args, env=env, cwd=home, capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertTrue((home / '.codex/scripts/pick-codex-model.sh').is_symlink())
@@ -294,7 +297,7 @@ http_headers = { Authorization = "Bearer fake-secret" }
 
     def test_default_install_routes_bash_pick_without_openrouter(self):
         home, env = self.install_default()
-        result = subprocess.run(['bash', '-c', 'source "$HOME/.bashrc_local"; codex pick -C "$HOME" "work prompt"'],
+        result = subprocess.run(['bash', '-c', 'source "$CODEX_HOME/scripts/codex-shell.bash"; codex pick -C "$HOME" "work prompt"'],
                                 env=env, cwd=home, capture_output=True, text=True, timeout=15)
         self.assertEqual(result.returncode, 0, result.stderr)
         call = self.launch()
@@ -309,7 +312,7 @@ http_headers = { Authorization = "Bearer fake-secret" }
     @unittest.skipUnless(ZSH, 'requires zsh (or TEST_ZSH)')
     def test_default_install_routes_zsh_pick_without_openrouter(self):
         home, env = self.install_default()
-        result = subprocess.run([ZSH, '-i', '-c', 'codex pick -C "$HOME" "work prompt"'],
+        result = subprocess.run([ZSH, '-c', 'source "$CODEX_HOME/scripts/codex-shell.zsh"; codex pick -C "$HOME" "work prompt"'],
                                 env=env, cwd=home, capture_output=True, text=True, timeout=15)
         self.assertEqual(result.returncode, 0, result.stderr)
         call = self.launch()
@@ -320,7 +323,7 @@ http_headers = { Authorization = "Bearer fake-secret" }
     def test_optional_openrouter_does_not_change_generic_picker_or_load_key(self):
         home, env = self.install_default(include_openrouter=True)
         self.assertFalse((home / '.codex/models.json').exists())
-        result = subprocess.run(['bash', '-c', 'source "$HOME/.bashrc_local"; codex pick'],
+        result = subprocess.run(['bash', '-c', 'source "$CODEX_HOME/scripts/codex-shell.bash"; source "$CODEX_HOME/scripts/codex-openrouter-shell.bash"; codex pick'],
                                 env=env, cwd=home, capture_output=True, text=True, timeout=15)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(self.launch()['args'][1], 'provider/alpha')
@@ -330,7 +333,7 @@ http_headers = { Authorization = "Bearer fake-secret" }
     @unittest.skipUnless(ZSH, 'requires zsh (or TEST_ZSH)')
     def test_optional_openrouter_keeps_zsh_generic_picker_available(self):
         home, env = self.install_default(include_openrouter=True)
-        result = subprocess.run([ZSH, '-i', '-c', 'codex pick'], env=env, cwd=home,
+        result = subprocess.run([ZSH, '-c', 'source "$CODEX_HOME/scripts/codex-shell.zsh"; source "$CODEX_HOME/scripts/codex-openrouter-shell.zsh"; codex pick'], env=env, cwd=home,
                                 capture_output=True, text=True, timeout=15)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(self.launch()['args'][1], 'provider/alpha')
@@ -338,10 +341,10 @@ http_headers = { Authorization = "Bearer fake-secret" }
 
     def test_openrouter_mode_refused_when_not_installed(self):
         home, env = self.install_default()
-        result = subprocess.run(['bash', '-c', 'source "$HOME/.bashrc_local"; codex pick --openrouter'],
+        result = subprocess.run(['bash', '-c', 'source "$CODEX_HOME/scripts/codex-shell.bash"; codex pick --openrouter'],
                                 env=env, cwd=home, capture_output=True, text=True, timeout=15)
         self.assertEqual(result.returncode, 2, result.stderr)
-        self.assertIn('requires --include-openrouter', result.stderr)
+        self.assertIn('requires OPENROUTER=1', result.stderr)
         self.assertFalse((self.work / 'server-args.json').exists())
         self.assertFalse((self.work / 'launch.json').exists())
 
