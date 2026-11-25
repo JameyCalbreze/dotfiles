@@ -1,8 +1,9 @@
 # Dotfiles
 
 Shared Codex, Herdr, and Ghostty configuration for Linux and macOS, with Bash
-and Zsh Codex model pickers. Clone the repository somewhere stable: installed
-files are symlinks back to this checkout, so editing them edits the repository.
+and Zsh Codex model pickers. Clone the repository somewhere stable: most
+installed files are symlinks back to this checkout, so editing them edits the
+repository. The machine-specific granular profile is generated separately.
 
 ## Install
 
@@ -13,13 +14,14 @@ make linux
 make macos
 ```
 
-Both targets install the shared files. They need `make` and standard Unix
-utilities; they do not install applications, fonts, or packages. Defaults work
-for any user on either platform:
+Both targets install the shared files. They need `make`, standard Unix
+utilities, and an installed Codex executable; they do not install applications,
+fonts, or packages. Defaults work for any user on either platform:
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `CODEX_HOME` | `$HOME/.codex` | Codex configs, rules, instructions, and scripts |
+| `CODEX_EXECUTABLE` | `codex` on `PATH` | Executable to grant sandbox read access |
 | `XDG_CONFIG_HOME` | `$HOME/.config` | Base directory for Ghostty and Herdr |
 | `HERDR_CONFIG_PATH` | `$XDG_CONFIG_HOME/herdr/config.toml` | Herdr config override |
 
@@ -37,10 +39,20 @@ resolved relative to the directory where Make runs. An unset or empty
 `CODEX_HOME` uses its default. The installer rejects overlapping destinations
 and destinations inside this repository.
 
+The installer generates `$CODEX_HOME/granular.config.toml` from the repository
+template and adds read access for the discovered Codex executable and its
+resolved symlink target. It does not grant access to their containing
+directories. If `codex` on `PATH` is a launcher rather than the executable that
+the sandbox re-executes, set `CODEX_EXECUTABLE` to that executable's path.
+Rerun the installation when the binary or its resolved target changes. A missing
+or non-executable Codex path stops installation before any files are changed.
+
 Existing files and symlinks at install destinations are moved to numbered
 `.dotfiles-backup.N` backups. Directories are not replaced. Repeated installs
-leave correct symlinks and backups alone. Codex config and rules are **whole
-files**, not merges: existing machine-local values, including project trust and
+leave correct symlinks, an unchanged generated granular profile, and backups
+alone. The generated profile is regenerated when its template or executable
+path changes; any previous profile is backed up. Codex config and rules are
+**whole files**, not merges: existing machine-local values, including project trust and
 local rules, remain in backups but are no longer active. Review and manually
 copy desired settings into an appropriate local configuration before relying on
 them. Other Codex state, credentials, sessions, and Herdr state remain local.
@@ -150,8 +162,9 @@ the backups for settings that must be retained. The old
 `.dotfiles-managed-config.json` and existing startup lines are left untouched.
 Remove obsolete lines and the state file manually if desired. Existing startup
 lines may still load integration files, including unmanaged OpenRouter files;
-review them separately. The granular profile is now linked as-is and no longer
-receives machine-specific additions from the old installer.
+review them separately. The granular profile is generated from the repository
+template with a machine-specific executable permission; an existing profile or
+symlink is backed up before it is replaced.
 
 ## Tests
 

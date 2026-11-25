@@ -1,5 +1,5 @@
 #!/bin/sh
-# Install whole-file symlinks, preserving existing files in numbered backups.
+# Install symlinks and a machine-specific profile, preserving previous files.
 set -eu
 set -f
 
@@ -61,6 +61,37 @@ newline='
 '
 case $HOME$codex_home$xdg$herdr$root in *"$newline"*) fail 'paths containing newlines are not supported' ;; esac
 
+# The sandboxed instructions helper re-executes Codex; allow only the actual
+# executable, not its containing directory. CODEX_EXECUTABLE is useful when the
+# PATH entry is a launcher rather than the helper executable itself.
+codex_executable=${CODEX_EXECUTABLE:-$(command -v codex || :)}
+[ -n "$codex_executable" ] || fail 'codex executable not found; install Codex or set CODEX_EXECUTABLE to its path'
+case $codex_executable in /*) ;; *) codex_executable=$cwd/$codex_executable ;; esac
+validate_executable_path() {
+    case $1 in *"$newline"*) fail 'codex executable path contains a newline' ;; esac
+    if printf '%s' "$1" | LC_ALL=C grep '[[:cntrl:]]' >/dev/null; then
+        fail 'codex executable path contains a control character'
+    fi
+}
+validate_executable_path "$codex_executable"
+[ -f "$codex_executable" ] && [ -x "$codex_executable" ] || fail "codex executable is not an executable file: $codex_executable"
+# Resolve file symlinks portably, accounting for relative targets and symlinked
+# parent directories. Include both the invocation path and final physical path.
+codex_resolved=$codex_executable
+hops=0
+while :; do
+    codex_parent=$(CDPATH= cd "$(dirname "$codex_resolved")" && pwd -P) || fail 'cannot resolve codex executable parent'
+    codex_resolved=$codex_parent/${codex_resolved##*/}
+    validate_executable_path "$codex_resolved"
+    [ -L "$codex_resolved" ] || break
+    hops=$((hops + 1))
+    [ "$hops" -le 40 ] || fail 'too many codex executable symlinks'
+    codex_link=$(readlink "$codex_resolved") || fail 'cannot read codex executable symlink'
+    validate_executable_path "$codex_link"
+    case $codex_link in /*) codex_resolved=$codex_link ;; *) codex_resolved=$codex_parent/$codex_link ;; esac
+done
+[ -f "$codex_resolved" ] && [ -x "$codex_resolved" ] || fail "resolved codex executable is not executable: $codex_resolved"
+
 destinations=
 mode=check
 link() {
@@ -84,6 +115,10 @@ link() {
         fi
         return
     fi
+    if [ "$kind" = generated ]; then
+        generate_profile "$source" "$target"
+        return
+    fi
     if [ "$kind" = optional ] && [ "$openrouter" = 0 ]; then
         if [ -L "$target" ] && [ "$(readlink "$target")" = "$source" ]; then
             rm "$target"
@@ -93,18 +128,48 @@ link() {
     fi
     if [ -L "$target" ] && [ "$(readlink "$target")" = "$source" ]; then return; fi
     mkdir -p "$(dirname "$target")"
-    if [ -e "$target" ] || [ -L "$target" ]; then
-        n=1
-        backup=$target.dotfiles-backup.$n
-        while [ -e "$backup" ] || [ -L "$backup" ]; do
-            n=$((n + 1))
-            backup=$target.dotfiles-backup.$n
-        done
-        mv "$target" "$backup"
-        printf 'Backed up %s to %s\n' "$target" "$backup"
-    fi
+    backup_target "$target"
     ln -s "$source" "$target"
     printf 'Linked %s -> %s\n' "$target" "$source"
+}
+
+backup_target() {
+    target_to_backup=$1
+    if [ -e "$target_to_backup" ] || [ -L "$target_to_backup" ]; then
+        n=1
+        backup=$target_to_backup.dotfiles-backup.$n
+        while [ -e "$backup" ] || [ -L "$backup" ]; do
+            n=$((n + 1))
+            backup=$target_to_backup.dotfiles-backup.$n
+        done
+        mv "$target_to_backup" "$backup"
+        printf 'Backed up %s to %s\n' "$target_to_backup" "$backup"
+    fi
+}
+
+generate_profile() {
+    profile_source=$1
+    profile_target=$2
+    mkdir -p "$(dirname "$profile_target")"
+    profile_tmp=$(mktemp "$(dirname "$profile_target")/.granular.config.toml.XXXXXX")
+    trap 'rm -f -- "$profile_tmp"' EXIT HUP INT TERM
+    cat "$profile_source" >"$profile_tmp"
+    printf '\n[permissions.granular.filesystem]\n' >>"$profile_tmp"
+    # Escape backslashes and double quotes for TOML basic-string keys.
+    escaped=$(printf '%s' "$codex_executable" | sed 's/\\/\\\\/g; s/"/\\"/g')
+    printf '"%s" = "read"\n' "$escaped" >>"$profile_tmp"
+    if [ "$codex_resolved" != "$codex_executable" ]; then
+        escaped=$(printf '%s' "$codex_resolved" | sed 's/\\/\\\\/g; s/"/\\"/g')
+        printf '"%s" = "read"\n' "$escaped" >>"$profile_tmp"
+    fi
+    if [ ! -L "$profile_target" ] && [ -f "$profile_target" ] && cmp -s "$profile_tmp" "$profile_target"; then
+        rm -f -- "$profile_tmp"
+    else
+        backup_target "$profile_target"
+        mv "$profile_tmp" "$profile_target"
+        printf 'Generated %s with Codex executable read access\n' "$profile_target"
+    fi
+    trap - EXIT HUP INT TERM
 }
 
 links() {
@@ -113,7 +178,7 @@ links() {
     link "$root/codex/AGENTS.md" "$codex_home/AGENTS.md"
     if [ "$openrouter" = 1 ]; then config=$root/codex/openrouter.config.toml; else config=$root/codex/config.toml; fi
     link "$config" "$codex_home/config.toml"
-    link "$root/codex/granular.config.toml" "$codex_home/granular.config.toml"
+    link "$root/codex/granular.config.toml" "$codex_home/granular.config.toml" generated
     link "$root/codex/rules/default.rules" "$codex_home/rules/default.rules"
     link "$root/bash/codex.bash" "$codex_home/scripts/codex-shell.bash"
     link "$root/zsh/codex.zsh" "$codex_home/scripts/codex-shell.zsh"

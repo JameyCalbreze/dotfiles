@@ -27,9 +27,14 @@ class InstallerTests(unittest.TestCase):
                 shutil.copy2(src, dst)
         self.home = self.base / 'home with spaces'
         self.home.mkdir()
-        self.env = dict(os.environ, HOME=str(self.home))
+        self.bin = self.base / 'bin'
+        self.bin.mkdir()
+        self.codex_bin = self.bin / 'codex'
+        self.codex_bin.write_text('#!/bin/sh\nexit 0\n')
+        self.codex_bin.chmod(0o755)
+        self.env = dict(os.environ, HOME=str(self.home), PATH=str(self.bin) + os.pathsep + os.environ['PATH'])
         for name in ('CODEX_HOME', 'XDG_CONFIG_HOME', 'HERDR_CONFIG_PATH', 'OPENROUTER',
-                     'OPEN_ROUTER_KEY', 'OPENROUTER_MODELS_URL'):
+                     'OPEN_ROUTER_KEY', 'OPENROUTER_MODELS_URL', 'CODEX_EXECUTABLE'):
             self.env.pop(name, None)
 
     def install(self, platform='linux', optional=False, success=True):
@@ -48,7 +53,6 @@ class InstallerTests(unittest.TestCase):
             xdg / 'ghostty/config': repo / 'ghostty/config',
             codex / 'AGENTS.md': repo / 'codex/AGENTS.md',
             codex / 'config.toml': repo / ('codex/openrouter.config.toml' if optional else 'codex/config.toml'),
-            codex / 'granular.config.toml': repo / 'codex/granular.config.toml',
             codex / 'rules/default.rules': repo / 'codex/rules/default.rules',
             codex / 'scripts/codex-shell.bash': repo / 'bash/codex.bash',
             codex / 'scripts/codex-shell.zsh': repo / 'zsh/codex.zsh',
@@ -74,6 +78,17 @@ class InstallerTests(unittest.TestCase):
                 self.assertTrue(destination.is_symlink(), str(destination))
                 self.assertEqual(os.readlink(destination), str(source))
 
+    def assert_profile(self, codex_home, executable, resolved=None):
+        profile = codex_home / 'granular.config.toml'
+        self.assertFalse(profile.is_symlink())
+        with profile.open('rb') as f:
+            config = tomllib.load(f)
+        filesystem = config['permissions']['granular']['filesystem']
+        expected = {':workspace_roots': {'.': 'read'}, str(executable): 'read'}
+        if resolved is not None and str(resolved) != str(executable):
+            expected[str(resolved)] = 'read'
+        self.assertEqual(filesystem, expected)
+
     def test_defaults_and_repeated_install_for_both_platforms(self):
         for platform in ('linux', 'macos'):
             with self.subTest(platform=platform):
@@ -81,12 +96,61 @@ class InstallerTests(unittest.TestCase):
                 self.install(platform)
                 codex, xdg = self.home / '.codex', self.home / '.config'
                 self.assert_links(self.expected(codex, xdg, xdg / 'herdr/config.toml'))
+                self.assert_profile(codex, self.codex_bin, self.codex_bin.resolve())
                 self.assertFalse((codex / 'scripts/pick-openrouter-model.sh').exists())
                 self.assertFalse((self.home / '.bashrc_local').exists())
                 self.assertFalse((self.home / '.zshrc').exists())
                 self.assertFalse((self.home / '.zsh_profile').exists())
                 self.install(platform)
                 self.assertFalse(list(self.home.rglob('*.dotfiles-backup.*')))
+
+    def test_profile_escapes_paths_and_resolves_relative_symlinks(self):
+        executable = self.base / 'codex "quoted" \u005c binary'
+        executable.write_text('#!/bin/sh\nexit 0\n')
+        executable.chmod(0o755)
+        self.codex_bin.unlink()
+        self.codex_bin.symlink_to(os.path.relpath(executable, self.bin))
+        self.install('macos')
+        self.assert_profile(self.home / '.codex', self.codex_bin, executable.resolve())
+        self.install('macos')
+        self.assertFalse(list(self.home.rglob('*.dotfiles-backup.*')))
+
+    def test_profile_migrates_symlink_then_updates_and_backs_up(self):
+        codex = self.home / '.codex'
+        codex.mkdir()
+        profile = codex / 'granular.config.toml'
+        profile.symlink_to(self.repo / 'codex/granular.config.toml')
+        self.install()
+        self.assertTrue((codex / 'granular.config.toml.dotfiles-backup.1').is_symlink())
+        self.assert_profile(codex, self.codex_bin, self.codex_bin.resolve())
+        profile.write_text(profile.read_text() + '# machine-local changes\n')
+        self.install()
+        self.assertIn('# machine-local changes', (codex / 'granular.config.toml.dotfiles-backup.2').read_text())
+        self.assert_profile(codex, self.codex_bin, self.codex_bin.resolve())
+
+    def test_profile_uses_override_and_updates_when_executable_changes(self):
+        self.install()
+        codex = self.home / '.codex'
+        before = (codex / 'granular.config.toml').read_text()
+        override = self.base / 'other executable'
+        override.write_text('#!/bin/sh\nexit 0\n')
+        override.chmod(0o755)
+        self.env['CODEX_EXECUTABLE'] = str(override)
+        self.install('macos')
+        self.assert_profile(codex, override, override.resolve())
+        self.assertEqual((codex / 'granular.config.toml.dotfiles-backup.1').read_text(), before)
+
+    def test_missing_or_invalid_codex_executable_fails_before_install(self):
+        self.env['CODEX_EXECUTABLE'] = str(self.base / 'missing')
+        result = self.install(success=False)
+        self.assertIn('codex executable', result.stderr)
+        self.assertFalse((self.home / '.codex').exists())
+        self.assertFalse((self.home / '.config').exists())
+        non_executable = self.base / 'not executable'
+        non_executable.write_text('not executable')
+        self.env['CODEX_EXECUTABLE'] = str(non_executable)
+        self.assertIn('not an executable file', self.install(success=False).stderr)
+        self.assertFalse((self.home / '.codex').exists())
 
     def test_overrides_and_relative_herdr_path(self):
         codex, xdg = self.base / 'custom codex', self.base / 'custom xdg'
