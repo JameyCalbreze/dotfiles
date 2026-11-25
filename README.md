@@ -41,11 +41,16 @@ and destinations inside this repository.
 
 The installer generates `$CODEX_HOME/granular.config.toml` from the repository
 template and adds read access for the discovered Codex executable and its
-resolved symlink target. It does not grant access to their containing
-directories. If `codex` on `PATH` is a launcher rather than the executable that
-the sandbox re-executes, set `CODEX_EXECUTABLE` to that executable's path.
-Rerun the installation when the binary or its resolved target changes. A missing
-or non-executable Codex path stops installation before any files are changed.
+resolved symlink target. On macOS, if the executable resolves to a standalone
+release (`packages/standalone/releases/.../bin/codex`), it also grants read
+access to the standalone runtime directory and the launcher directory. **All
+files under those directories become readable to sandboxed commands.** This is
+a workaround for the filesystem-helper startup failure reported in
+openai/codex#41493; other installations do not get these directory grants.
+If `codex` on `PATH` is a launcher rather than the executable that the sandbox
+re-executes, set `CODEX_EXECUTABLE` to that executable's path. Rerun the
+installation when the binary or its resolved target changes. A missing or
+non-executable Codex path stops installation before any files are changed.
 
 Existing files and symlinks at install destinations are moved to numbered
 `.dotfiles-backup.N` backups. Directories are not replaced. Repeated installs
@@ -172,4 +177,7 @@ symlink is backed up before it is replaced.
 homes, fixtures, and stub executables. The suites require Python 3.11+, Bash,
 Lua 5.4+, `jq`, and `fzf`; Zsh tests run when Zsh is available. Set `TEST_ZSH`
 to choose a Zsh executable, or `TEST_REAL_CODEX` for the optional real Codex
-app-server smoke test. The latter may contact the configured provider.
+app-server smoke test. The latter may contact the configured provider. On
+macOS, set `TEST_MACOS_CODEX_SANDBOX` to a real Codex executable to additionally
+check that the generated profile can launch it inside `codex sandbox`. Run that
+check outside any enclosing sandbox; it does not test TUI session startup.

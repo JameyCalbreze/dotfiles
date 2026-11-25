@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 import tempfile
 import tomllib
 import unittest
@@ -78,7 +79,7 @@ class InstallerTests(unittest.TestCase):
                 self.assertTrue(destination.is_symlink(), str(destination))
                 self.assertEqual(os.readlink(destination), str(source))
 
-    def assert_profile(self, codex_home, executable, resolved=None):
+    def assert_profile(self, codex_home, executable, resolved=None, extra=()):
         profile = codex_home / 'granular.config.toml'
         self.assertFalse(profile.is_symlink())
         with profile.open('rb') as f:
@@ -87,6 +88,7 @@ class InstallerTests(unittest.TestCase):
         expected = {':workspace_roots': {'.': 'read'}, str(executable): 'read'}
         if resolved is not None and str(resolved) != str(executable):
             expected[str(resolved)] = 'read'
+        expected.update({str(path): 'read' for path in extra})
         self.assertEqual(filesystem, expected)
 
     def test_defaults_and_repeated_install_for_both_platforms(self):
@@ -103,6 +105,53 @@ class InstallerTests(unittest.TestCase):
                 self.assertFalse((self.home / '.zsh_profile').exists())
                 self.install(platform)
                 self.assertFalse(list(self.home.rglob('*.dotfiles-backup.*')))
+
+    def standalone_install(self, system):
+        uname = self.bin / 'uname'
+        uname.write_text('#!/bin/sh\nprintf "%s\\n" ' + system + '\n')
+        uname.chmod(0o755)
+        root = self.home / '.codex/packages/standalone'
+        release = root / 'releases/0.162.1-aarch64-apple-darwin'
+        (release / 'bin').mkdir(parents=True)
+        executable = release / 'bin/codex'
+        executable.write_text('#!/bin/sh\nexit 0\n')
+        executable.chmod(0o755)
+        (root / 'current').symlink_to('releases/' + release.name)
+        self.codex_bin.unlink()
+        self.codex_bin.symlink_to(root / 'current/bin/codex')
+        return root.resolve(), executable.resolve()
+
+    def test_macos_standalone_allows_runtime_and_launcher_directories(self):
+        # Start with the old file-only profile, then simulate the installer's
+        # current -> versioned release chain and migrate it.
+        self.install('macos', optional=True)
+        codex = self.home / '.codex'
+        previous = (codex / 'granular.config.toml').read_text()
+        root, executable = self.standalone_install('Darwin')
+        result = self.install('macos', optional=True)
+        self.assert_profile(codex, self.codex_bin, executable, extra=(root, self.bin))
+        self.assertIn(str(root), result.stdout)
+        self.assertIn(str(self.bin), result.stdout)
+        self.assertEqual((codex / 'granular.config.toml.dotfiles-backup.1').read_text(), previous)
+        self.install('macos', optional=True)
+        self.assertFalse((codex / 'granular.config.toml.dotfiles-backup.2').exists())
+
+    def test_non_macos_standalone_does_not_widen_read_access(self):
+        root, executable = self.standalone_install('Linux')
+        self.install('linux')
+        self.assert_profile(self.home / '.codex', self.codex_bin, executable)
+
+    @unittest.skipUnless(sys.platform == 'darwin' and os.environ.get('TEST_MACOS_CODEX_SANDBOX'),
+                         'set TEST_MACOS_CODEX_SANDBOX on macOS to a real Codex executable')
+    def test_real_macos_sandbox_can_launch_codex(self):
+        executable = os.environ['TEST_MACOS_CODEX_SANDBOX']
+        self.env['CODEX_EXECUTABLE'] = executable
+        self.env['CODEX_HOME'] = str(self.home / '.codex')
+        self.install('macos')
+        result = subprocess.run([executable, 'sandbox', '--profile', 'granular', '--', executable, '--version'],
+                                env=self.env, cwd=self.repo, capture_output=True, text=True, timeout=30)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn('codex-cli', result.stdout)
 
     def test_profile_escapes_paths_and_resolves_relative_symlinks(self):
         executable = self.base / 'codex "quoted" \u005c binary'

@@ -61,9 +61,8 @@ newline='
 '
 case $HOME$codex_home$xdg$herdr$root in *"$newline"*) fail 'paths containing newlines are not supported' ;; esac
 
-# The sandboxed instructions helper re-executes Codex; allow only the actual
-# executable, not its containing directory. CODEX_EXECUTABLE is useful when the
-# PATH entry is a launcher rather than the helper executable itself.
+# The sandboxed instructions helper re-executes Codex. CODEX_EXECUTABLE is
+# useful when the PATH entry is a launcher rather than the helper executable.
 codex_executable=${CODEX_EXECUTABLE:-$(command -v codex || :)}
 [ -n "$codex_executable" ] || fail 'codex executable not found; install Codex or set CODEX_EXECUTABLE to its path'
 case $codex_executable in /*) ;; *) codex_executable=$cwd/$codex_executable ;; esac
@@ -91,6 +90,25 @@ while :; do
     case $codex_link in /*) codex_resolved=$codex_link ;; *) codex_resolved=$codex_parent/$codex_link ;; esac
 done
 [ -f "$codex_resolved" ] && [ -x "$codex_resolved" ] || fail "resolved codex executable is not executable: $codex_resolved"
+
+# macOS Seatbelt can deny the standalone helper even with read rules for both
+# executable spellings. The upstream-reported workaround also grants the
+# standalone runtime and launcher directories; this intentionally permits
+# reading their other contents. Do not widen other installation types.
+standalone_root=
+standalone_launcher_dir=
+if [ "$(uname -s)" = Darwin ]; then
+    case $codex_resolved in
+        */packages/standalone/releases/*/bin/codex)
+            standalone_root=${codex_resolved%/releases/*}
+            case $codex_executable in
+                "$standalone_root"/*) ;;
+                *) standalone_launcher_dir=$(dirname "$codex_executable") ;;
+            esac
+            [ "$standalone_launcher_dir" != / ] || fail 'refusing to grant read access to the filesystem root for a standalone launcher'
+            ;;
+    esac
+fi
 
 destinations=
 mode=check
@@ -162,12 +180,26 @@ generate_profile() {
         escaped=$(printf '%s' "$codex_resolved" | sed 's/\\/\\\\/g; s/"/\\"/g')
         printf '"%s" = "read"\n' "$escaped" >>"$profile_tmp"
     fi
+    if [ -n "$standalone_root" ]; then
+        escaped=$(printf '%s' "$standalone_root" | sed 's/\\/\\\\/g; s/"/\\"/g')
+        printf '"%s" = "read"\n' "$escaped" >>"$profile_tmp"
+    fi
+    if [ -n "$standalone_launcher_dir" ] && [ "$standalone_launcher_dir" != "$standalone_root" ]; then
+        escaped=$(printf '%s' "$standalone_launcher_dir" | sed 's/\\/\\\\/g; s/"/\\"/g')
+        printf '"%s" = "read"\n' "$escaped" >>"$profile_tmp"
+    fi
     if [ ! -L "$profile_target" ] && [ -f "$profile_target" ] && cmp -s "$profile_tmp" "$profile_target"; then
         rm -f -- "$profile_tmp"
     else
         backup_target "$profile_target"
         mv "$profile_tmp" "$profile_target"
         printf 'Generated %s with Codex executable read access\n' "$profile_target"
+        if [ -n "$standalone_root" ]; then
+            printf 'macOS standalone read access includes %s\n' "$standalone_root"
+            if [ -n "$standalone_launcher_dir" ]; then
+                printf 'macOS standalone read access includes %s\n' "$standalone_launcher_dir"
+            fi
+        fi
     fi
     trap - EXIT HUP INT TERM
 }
