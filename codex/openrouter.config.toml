@@ -4,13 +4,6 @@ model_reasoning_effort = "medium"
 model_provider = "open_router"
 model = "z-ai/glm-5.2"
 
-[profiles.bedrock_glm]
-model_provider = "aws_bedrock"
-model = "zai.glm-5"
-model_context_window = 200000
-model_auto_compact_token_limit = 195000
-model_max_output_tokens = 128000
-
 [tui]
 status_line = ["model-with-reasoning", "current-dir", "model", "reasoning", "context-used", "used-tokens", "total-input-tokens", "total-output-tokens"]
 status_line_use_colors = true

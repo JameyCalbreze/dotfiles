@@ -231,6 +231,8 @@ class InstallerTests(unittest.TestCase):
         self.assertEqual(optional['model_provider'], 'open_router')
         self.assertEqual(optional['model'], 'z-ai/glm-5.2')
         self.assertNotIn('model_provider', standard)
+        self.assertNotIn('bedrock_glm', standard.get('profiles', {}))
+        self.assertNotIn('bedrock_glm', optional.get('profiles', {}))
         self.assertIn('open_router', optional['model_providers'])
         self.assertIn('openrouter_glm', optional['profiles'])
 
