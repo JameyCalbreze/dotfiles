@@ -1,12 +1,15 @@
-.PHONY: help linux macos test
+.PHONY: help linux macos openrouter test
 
 OPENROUTER ?= 0
 
 help:
-	@printf '%s\n' 'Run make linux or make macos (optionally OPENROUTER=1).'
+	@printf '%s\n' 'Run make linux, make macos, or make openrouter (installs OpenRouter and refreshes its catalog).'
 
 linux macos:
 	@sh ./scripts/install.sh "$(OPENROUTER)"
+
+openrouter:
+	@sh ./scripts/install-openrouter.sh
 
 test:
 	python3 -m unittest discover -s tests -v

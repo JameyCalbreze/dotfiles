@@ -344,6 +344,7 @@ for invocation in bare args; do
     assert_jq '. == ["--profile", "granular", "exec", "a prompt"]' "$work/argv.json"
   fi
   [[ ! -f $work/routed.json ]] || fail 'ordinary invocation routed to picker'
+  assert_jq '.router == "mocked-router"' "$work/env.json"
 done
 run_bash_function codex-openrouter-models --target 'path with spaces'
 assert_jq '.key == "mocked-router" and .args == ["--target", "path with spaces"]' "$work/refresh.json"

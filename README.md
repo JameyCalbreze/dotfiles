@@ -67,16 +67,29 @@ does not modify them. Install JetBrainsMono Nerd Font separately.
 
 ## Optional OpenRouter
 
-Only on an approved machine, opt in explicitly:
+Only on an approved machine, install the integration and refresh its catalog
+on either Linux or macOS:
 
 ```sh
-make linux OPENROUTER=1
-# or: make macos OPENROUTER=1
+make openrouter
 ```
 
-This links a complete OpenRouter-enabled Codex config and the optional picker,
-catalog scripts, and inputs. It does not select OpenRouter as the default
-provider. Source the appropriate optional file **after** the shared one:
+This target reads `OPEN_ROUTER_KEY` from the environment or
+`~/.secrets/openrouter`, installs the optional files, and fetches OpenRouter
+models. Edit `codex/openrouter-model-families.txt` to allowlist model ID
+prefixes; only matching text-input/text-output models with a valid context
+length are included, plus any exact EU exceptions configured in
+`codex/openrouter-model-exceptions.json`. Every catalog entry has empty
+`base_instructions`. The generated `$CODEX_HOME/models.json` replaces the
+existing catalog atomically; its backup is also stripped of base instructions.
+A failed refresh leaves the existing catalog intact, though installation may
+already have updated symlinks. The target requires Bash, curl, jq, and stat.
+
+To install the optional files without fetching models, use
+`make linux OPENROUTER=1` or `make macos OPENROUTER=1` instead. The opt-in
+config defaults to OpenRouter and the `z-ai/glm-5.2` model; it does not
+change the standard config. Source the appropriate optional file **after**
+the shared one, so ordinary `codex` commands can read the key file:
 
 ```bash
 source "${CODEX_HOME:-$HOME/.codex}/scripts/codex-openrouter-shell.bash"
@@ -89,7 +102,10 @@ source "${CODEX_HOME:-$HOME/.codex}/scripts/codex-openrouter-shell.zsh"
 Run `codex-openrouter-models` to refresh the catalog and `codex pick
 --openrouter` to choose a model. The EU exception models require suitable
 OpenRouter account access. Credentials come from `OPEN_ROUTER_KEY` or
-`~/.secrets/openrouter` and are not copied to this repository.
+`~/.secrets/openrouter` and are not copied to this repository. The optional
+wrapper loads the OpenRouter key for every `codex` invocation, including
+commands that explicitly select a different provider; it does not leave a
+file-loaded key in the parent shell.
 
 Run the platform target again without `OPENROUTER=1` to switch back to the
 standard config and remove optional symlinks that still point to this checkout.

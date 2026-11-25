@@ -320,14 +320,14 @@ http_headers = { Authorization = "Bearer fake-secret" }
         self.assertIsNone(call['key'])
         self.assertFalse(any('open_router' in item or 'openrouter.ai' in item for item in call['args']))
 
-    def test_optional_openrouter_does_not_change_generic_picker_or_load_key(self):
+    def test_optional_openrouter_generic_picker_loads_key(self):
         home, env = self.install_default(include_openrouter=True)
         self.assertFalse((home / '.codex/models.json').exists())
         result = subprocess.run(['bash', '-c', 'source "$CODEX_HOME/scripts/codex-shell.bash"; source "$CODEX_HOME/scripts/codex-openrouter-shell.bash"; codex pick'],
                                 env=env, cwd=home, capture_output=True, text=True, timeout=15)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(self.launch()['args'][1], 'provider/alpha')
-        self.assertIsNone(self.launch()['key'])
+        self.assertEqual(self.launch()['key'], 'do-not-use')
         self.assertFalse(any('open_router' in item or 'openrouter.ai' in item for item in self.launch()['args']))
 
     @unittest.skipUnless(ZSH, 'requires zsh (or TEST_ZSH)')
@@ -337,7 +337,7 @@ http_headers = { Authorization = "Bearer fake-secret" }
                                 capture_output=True, text=True, timeout=15)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(self.launch()['args'][1], 'provider/alpha')
-        self.assertIsNone(self.launch()['key'])
+        self.assertEqual(self.launch()['key'], 'do-not-use')
 
     def test_openrouter_mode_refused_when_not_installed(self):
         home, env = self.install_default()

@@ -1,6 +1,8 @@
 approval_policy = "on-request"
 approvals_reviewer = "user"
 model_reasoning_effort = "medium"
+model_provider = "open_router"
+model = "z-ai/glm-5.2"
 
 [profiles.bedrock_glm]
 model_provider = "aws_bedrock"
@@ -17,7 +19,7 @@ status_line_use_colors = true
 hooks = true
 terminal_resize_reflow = true
 
-# OpenRouter is available explicitly; the default provider is unchanged.
+# The opt-in config defaults to OpenRouter.
 [model_providers.open_router]
 name = "Open Router"
 base_url = "https://openrouter.ai/api/v1"

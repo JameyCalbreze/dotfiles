@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Exercise both Make targets against isolated homes and repository copies."""
+"""Exercise Make targets against isolated homes and repository copies."""
+import json
 import os
 from pathlib import Path
 import shutil
@@ -27,7 +28,8 @@ class InstallerTests(unittest.TestCase):
         self.home = self.base / 'home with spaces'
         self.home.mkdir()
         self.env = dict(os.environ, HOME=str(self.home))
-        for name in ('CODEX_HOME', 'XDG_CONFIG_HOME', 'HERDR_CONFIG_PATH', 'OPENROUTER'):
+        for name in ('CODEX_HOME', 'XDG_CONFIG_HOME', 'HERDR_CONFIG_PATH', 'OPENROUTER',
+                     'OPEN_ROUTER_KEY', 'OPENROUTER_MODELS_URL'):
             self.env.pop(name, None)
 
     def install(self, platform='linux', optional=False, success=True):
@@ -226,8 +228,66 @@ class InstallerTests(unittest.TestCase):
                     self.assertEqual(optional[key][nested_key], nested_value)
             else:
                 self.assertEqual(optional[key], value)
+        self.assertEqual(optional['model_provider'], 'open_router')
+        self.assertEqual(optional['model'], 'z-ai/glm-5.2')
+        self.assertNotIn('model_provider', standard)
         self.assertIn('open_router', optional['model_providers'])
         self.assertIn('openrouter_glm', optional['profiles'])
+
+    def test_openrouter_target_installs_allowlisted_prompt_free_catalog(self):
+        bindir = self.base / 'stub bin'
+        bindir.mkdir()
+        curl = bindir / 'curl'
+        curl.write_text('''#!/bin/sh
+case "$*" in
+  *"Authorization: Bearer $EXPECTED_KEY"*) ;;
+  *) exit 91 ;;
+esac
+if [ "${BAD_CATALOG:-}" = 1 ]; then
+  printf '%s\\n' '{"data":{}}'
+else
+  cat "$MODEL_FIXTURE"
+fi
+''')
+        curl.chmod(0o755)
+        (self.repo / 'codex/openrouter-model-families.txt').write_text('openai/\n')
+        secrets = self.home / '.secrets'
+        secrets.mkdir()
+        (secrets / 'openrouter').write_text('file-key\n')
+        codex, xdg = self.base / 'custom codex', self.home / '.config'
+        self.env.update(CODEX_HOME=str(codex), PATH=str(bindir) + os.pathsep + self.env['PATH'],
+                        EXPECTED_KEY='file-key', MODEL_FIXTURE=str(self.repo / 'codex/tests/fixtures/openrouter-models.json'))
+        result = self.install('openrouter')
+        self.assertNotIn('file-key', result.stdout + result.stderr)
+        self.assert_links(self.expected(codex, xdg, xdg / 'herdr/config.toml', optional=True))
+        catalog = codex / 'models.json'
+        data = json.loads(catalog.read_text())
+        self.assertEqual([model['slug'] for model in data['models']], ['openai/gpt-test'])
+        self.assertTrue(all(model['base_instructions'] == '' for model in data['models']))
+        self.assertEqual(catalog.stat().st_mode & 0o777, 0o600)
+
+        # A supplied environment key takes precedence, and failed refreshes leave
+        # the previously installed catalog unchanged.
+        self.env.update(OPEN_ROUTER_KEY='env-key', EXPECTED_KEY='env-key', BAD_CATALOG='1')
+        before = catalog.read_bytes()
+        result = self.install('openrouter', success=False)
+        self.assertNotIn('env-key', result.stdout + result.stderr)
+        self.assertEqual(catalog.read_bytes(), before)
+        self.assertFalse(list(codex.glob('models.json.*.bak')))
+        del self.env['BAD_CATALOG']
+        data['models'][0]['base_instructions'] = 'old system prompt'
+        catalog.write_text(json.dumps(data))
+        self.install('openrouter')
+        backups = list(codex.glob('models.json.*.bak'))
+        self.assertEqual(len(backups), 1)
+        self.assertTrue(all(model['base_instructions'] == ''
+                            for model in json.loads(backups[0].read_text())['models']))
+
+    def test_openrouter_target_requires_credentials_before_installing(self):
+        result = self.install('openrouter', success=False)
+        self.assertIn('OPEN_ROUTER_KEY', result.stderr)
+        self.assertFalse((self.home / '.codex').exists())
+        self.assertFalse((self.home / '.config').exists())
 
     def test_invalid_optional_value_fails_without_changes(self):
         result = subprocess.run(['make', '-C', str(self.repo), 'linux', 'OPENROUTER=yes'],
